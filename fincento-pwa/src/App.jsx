@@ -99,6 +99,10 @@ const MOCK_TXS = [
   { id:19, desc:'Disney+',              amount:27.90,  date:'2025-04-26', cat:cat('Subscriptions'),     bank:'Cartão' },
   { id:20, desc:'Gasolina Petrobras',   amount:200.00, date:'2025-04-27', cat:cat('Transport'),         bank:'Itaú' },
 ]
+const MOCK_INFLOWS = [
+  { id:'in1', desc:'Salário',        amount:4500.00, date:'2025-04-05', cat:cat('default'), bank:'Itaú' },
+  { id:'in2', desc:'Freelance',      amount:1300.00, date:'2025-04-15', cat:cat('default'), bank:'Inter' },
+]
 const MOCK_LINKS = [
   { id:'m1', institution:{ name:'Inter' },  status:'valid' },
   { id:'m2', institution:{ name:'Itaú' },   status:'valid' },
@@ -115,17 +119,18 @@ const MOCK_FLOW = [
 // ─────────────────────────────────────────────────────────────────────────────
 const fmt = (n) => (n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-const processTxs = (raw) =>
-  raw
-    .filter(t => t.type === 'OUTFLOW')
-    .map(t => ({
-      id:     t.id,
-      desc:   t.description,
-      amount: Math.abs(t.amount),
-      date:   t.value_date,
-      cat:    cat(t.category),
-      bank:   t._institution || t.account?.institution?.name || '—',
-    }))
+const mapTx = (t) => ({
+  id:     t.id,
+  desc:   t.description,
+  amount: Math.abs(t.amount),
+  date:   t.value_date,
+  cat:    cat(t.category),
+  bank:   t._institution || t.account?.institution?.name || '—',
+  type:   t.type,
+})
+
+const processTxs = (raw) => raw.filter(t => t.type === 'OUTFLOW').map(mapTx)
+const processInflows = (raw) => raw.filter(t => t.type === 'INFLOW').map(mapTx)
 
 const byCat = (txs) => {
   const m = {}
@@ -142,6 +147,7 @@ const byCat = (txs) => {
 export default function App() {
   const [tab, setTab]             = useState('home')
   const [txs, setTxs]             = useState([])
+  const [inflows, setInflows]     = useState([])
   const [links, setLinks]         = useState([])
   const [flow]                    = useState(MOCK_FLOW)
   const [loading, setLoading]     = useState(true)
@@ -169,6 +175,7 @@ export default function App() {
         // Backend offline → fallback para modo demo
         setIsMock(true)
         setTxs(MOCK_TXS)
+        setInflows(MOCK_INFLOWS)
         setLinks(MOCK_LINKS)
       } else {
         setIsMock(false)
@@ -178,12 +185,14 @@ export default function App() {
         ])
         setLinks(allLinks)
         setTxs(processTxs(rawTxs))
+        setInflows(processInflows(rawTxs))
       }
       setLastSync(new Date())
     } catch (e) {
       setError(e.message)
       setIsMock(true)
       setTxs(MOCK_TXS)
+      setInflows(MOCK_INFLOWS)
       setLinks(MOCK_LINKS)
     }
     setLoading(false)
@@ -286,7 +295,7 @@ export default function App() {
 
   // ── Derived ─────────────────────────────────────────────────────────────────
   const totalGasto   = txs.reduce((s, t) => s + t.amount, 0)
-  const totalReceita = 5800
+  const totalReceita = inflows.reduce((s, t) => s + t.amount, 0)
   const saldo        = totalReceita - totalGasto
   const catData      = byCat(txs)
   const filteredTxs  = txs
@@ -407,7 +416,7 @@ export default function App() {
                 <div style={s.kpiCard('#4ECDC4')}>
                   <div style={s.kpiLbl}>Receita</div>
                   <div style={s.kpiVal('#4ECDC4')}>{fmt(totalReceita)}</div>
-                  <div style={s.kpiSub}>entradas</div>
+                  <div style={s.kpiSub}>{inflows.length} entrada{inflows.length !== 1 ? 's' : ''}</div>
                 </div>
                 <div style={s.kpiCard('#FF6B6B')}>
                   <div style={s.kpiLbl}>Gastos</div>

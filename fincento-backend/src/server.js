@@ -13,9 +13,9 @@ const app  = express()
 const PORT = process.env.PORT || 3001
 
 // ── Validação de config na inicialização ──────────────────────────────────────
-if (!process.env.BELVO_SECRET_ID || process.env.BELVO_SECRET_ID === 'your_secret_id_here') {
-  console.error('❌ BELVO_SECRET_ID não configurado. Copie .env.example para .env e preencha.')
-  process.exit(1)
+const BELVO_CONFIGURED = process.env.BELVO_SECRET_ID && process.env.BELVO_SECRET_ID !== 'sua_secret_id_aqui'
+if (!BELVO_CONFIGURED) {
+  console.warn('⚠️  Belvo não configurado. O app funciona apenas com importação de OFX/CSV.')
 }
 
 // ── Segurança ─────────────────────────────────────────────────────────────────
@@ -110,6 +110,7 @@ app.get('/health', (_, res) => {
 
 // GET /api/links — lista todos os links (bancos conectados)
 app.get('/api/links', async (_, res) => {
+  if (!BELVO_CONFIGURED) return ok(res, [])
   try {
     const cached = getCache('links')
     if (cached) return ok(res, cached)
@@ -198,25 +199,27 @@ app.get('/api/transactions', async (req, res) => {
     const cached = getCache(cacheKey)
     if (cached) return ok(res, cached)
 
-    const links = await Belvo.getLinks()
-    const results = await Promise.allSettled(
-      links.map(link =>
-        Belvo.getTransactions(link.id, date_from, date_to)
-          .then(txs => txs.map(t => ({
-            ...t,
-            _linkId:      link.id,
-            _institution: link.institution?.name || link.id,
-          })))
+    // Tenta buscar do Belvo (pode falhar se não configurado)
+    let belvoTxs = []
+    try {
+      const links = await Belvo.getLinks()
+      const results = await Promise.allSettled(
+        links.map(link =>
+          Belvo.getTransactions(link.id, date_from, date_to)
+            .then(txs => txs.map(t => ({
+              ...t,
+              _linkId:      link.id,
+              _institution: link.institution?.name || link.id,
+            })))
+        )
       )
-    )
+      belvoTxs = results
+        .filter(r => r.status === 'fulfilled')
+        .flatMap(r => r.value)
+    } catch { /* Belvo indisponível, continua só com importados */ }
 
-    const belvoTxs = results
-      .filter(r => r.status === 'fulfilled')
-      .flatMap(r => r.value)
-
-    // Merge com transações importadas via OFX/CSV
+    // Merge com transações importadas via OFX/CSV (sem filtro de data — volume pequeno)
     const imported = Storage.loadAllImported()
-      .filter(t => t.value_date >= date_from && t.value_date <= date_to)
 
     const allTxs = [...belvoTxs, ...imported]
     setCache(cacheKey, allTxs, TTL.transactions)

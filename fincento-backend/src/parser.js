@@ -56,14 +56,25 @@ export function parseCSV(content) {
     throw new Error('CSV inválido: não encontrei colunas de data e valor. Colunas esperadas: data/date, valor/amount, descricao/description.')
   }
 
+  // Detecta padrão: se maioria é positiva, trata positivos como gastos (fatura de cartão)
+  // Se maioria é negativa, trata negativos como gastos (extrato bancário)
+  const amounts = records.map(r => parseBRLAmount(r[cols.amount])).filter(a => !isNaN(a))
+  const positiveCount = amounts.filter(a => a > 0).length
+  const negativeCount = amounts.filter(a => a < 0).length
+  // Maioria positiva = fatura (positivo = gasto). Maioria negativa = extrato (negativo = gasto).
+  const positiveIsOutflow = positiveCount >= negativeCount
+
   return records.map(row => {
     const rawAmount = parseBRLAmount(row[cols.amount])
+    const type = positiveIsOutflow
+      ? (rawAmount > 0 ? 'OUTFLOW' : 'INFLOW')
+      : (rawAmount < 0 ? 'OUTFLOW' : 'INFLOW')
     return {
       id: `imp_${uuid()}`,
       description: (row[cols.desc] || 'Sem descrição').trim(),
       amount: rawAmount,
       value_date: parseBRLDate(row[cols.date]),
-      type: rawAmount < 0 ? 'OUTFLOW' : 'INFLOW',
+      type,
       category: null,
       _linkId: 'import',
       _institution: null,
