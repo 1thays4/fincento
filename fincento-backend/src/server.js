@@ -12,6 +12,8 @@ import * as Storage from './storage.js'
 const app  = express()
 const PORT = process.env.PORT || 3001
 
+app.set('trust proxy', 1)
+
 // ── Validação de config na inicialização ──────────────────────────────────────
 const BELVO_CONFIGURED = process.env.BELVO_SECRET_ID && process.env.BELVO_SECRET_ID !== 'sua_secret_id_aqui'
 if (!BELVO_CONFIGURED) {
