@@ -30,16 +30,19 @@ export async function parseOFX(content) {
   // Tenta extrair nome do banco do OFX
   const fiOrg = data.OFX?.SIGNONMSGSRSV1?.SONRS?.FI?.ORG || null
 
-  return entries.map(e => ({
-    id: `imp_${uuid()}`,
-    description: (e.NAME || e.MEMO || 'Sem descrição').trim(),
-    amount: parseFloat(e.TRNAMT) || 0,
-    value_date: parseOFXDate(e.DTPOSTED),
-    type: parseFloat(e.TRNAMT) < 0 ? 'OUTFLOW' : 'INFLOW',
-    category: null,
-    _linkId: 'import',
-    _institution: fiOrg,
-  }))
+  return entries.map(e => {
+    const desc = (e.NAME || e.MEMO || 'Sem descrição').trim()
+    return {
+      id: `imp_${uuid()}`,
+      description: desc,
+      amount: parseFloat(e.TRNAMT) || 0,
+      value_date: parseOFXDate(e.DTPOSTED),
+      type: parseFloat(e.TRNAMT) < 0 ? 'OUTFLOW' : 'INFLOW',
+      category: categorize(desc),
+      _linkId: 'import',
+      _institution: fiOrg,
+    }
+  })
 }
 
 // ── CSV Parser ───────────────────────────────────────────────────────────────
@@ -69,17 +72,39 @@ export function parseCSV(content) {
     const type = positiveIsOutflow
       ? (rawAmount > 0 ? 'OUTFLOW' : 'INFLOW')
       : (rawAmount < 0 ? 'OUTFLOW' : 'INFLOW')
+    const desc = (row[cols.desc] || 'Sem descrição').trim()
     return {
       id: `imp_${uuid()}`,
-      description: (row[cols.desc] || 'Sem descrição').trim(),
+      description: desc,
       amount: rawAmount,
       value_date: parseBRLDate(row[cols.date]),
       type,
-      category: null,
+      category: categorize(desc),
       _linkId: 'import',
       _institution: null,
     }
   }).filter(t => t.value_date && !isNaN(t.amount))
+}
+
+// ── Categorização automática por palavras-chave ─────────────────────────────
+const CATEGORY_RULES = [
+  { category: 'Food & Groceries', keywords: ['mercado', 'supermercado', 'hortifruti', 'sacolão', 'sacolao', 'açougue', 'acougue', 'padaria', 'mercearia', 'atacadão', 'atacadao', 'assaí', 'assai', 'bistek', 'carrefour', 'extra', 'pão de açúcar', 'pao de acucar', 'big', 'walmart', 'sam\'s', 'sams'] },
+  { category: 'Restaurants',      keywords: ['ifood', 'restaurante', 'lanchonete', 'pizzaria', 'hamburgueria', 'sushi', 'uber eats', 'rappi', 'bistrô', 'bistro', 'bar ', 'churrascaria', 'cantina', 'cafeteria', 'café', 'cafe', 'mcdonald', 'burger king', 'subway', 'starbucks', 'outback'] },
+  { category: 'Transport',        keywords: ['uber', 'lyft', '99', '99app', 'gasolina', 'combustível', 'combustivel', 'posto', 'shell', 'petrobras', 'ipiranga', 'estacionamento', 'parking', 'pedágio', 'pedagio', 'sem parar', 'conectcar', 'move mais'] },
+  { category: 'Health',           keywords: ['farmácia', 'farmacia', 'drogaria', 'hospital', 'clínica', 'clinica', 'médico', 'medico', 'dentista', 'laboratorio', 'laboratório', 'unimed', 'amil', 'hapvida', 'sulamerica', 'sulamerica', 'academia', 'smart fit', 'gympass', 'wellhub', 'droga raia', 'drogasil', 'nissei', 'catarinense', 'panvel'] },
+  { category: 'Entertainment',    keywords: ['cinema', 'teatro', 'show', 'ingresso', 'parque', 'diversão', 'diversao', 'jogo', 'game', 'steam', 'playstation', 'xbox', 'nintendo', 'cinemark', 'cinépolis', 'cinepolis'] },
+  { category: 'Education',        keywords: ['escola', 'faculdade', 'universidade', 'curso', 'udemy', 'alura', 'coursera', 'livro', 'livraria', 'mensalidade escolar', 'material escolar'] },
+  { category: 'Housing',          keywords: ['aluguel', 'condomínio', 'condominio', 'iptu', 'água', 'agua', 'samae', 'sanepar', 'copasa', 'sabesp', 'energia', 'celesc', 'enel', 'cpfl', 'cemig', 'copel', 'light', 'eletropaulo', 'gás', 'gas', 'comgas', 'internet', 'vivo fibra', 'claro', 'tim', 'oi'] },
+  { category: 'Subscriptions',    keywords: ['netflix', 'spotify', 'disney', 'hbo', 'amazon prime', 'apple', 'youtube premium', 'globoplay', 'deezer', 'paramount', 'star+', 'crunchyroll', 'xbox game pass', 'icloud', 'google one', 'chatgpt', 'notion'] },
+]
+
+function categorize(description) {
+  if (!description) return null
+  const lower = description.toLowerCase()
+  for (const rule of CATEGORY_RULES) {
+    if (rule.keywords.some(kw => lower.includes(kw))) return rule.category
+  }
+  return null
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
