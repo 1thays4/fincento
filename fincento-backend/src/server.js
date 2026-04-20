@@ -4,7 +4,10 @@ import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
+import multer from 'multer'
 import * as Belvo from './belvo.js'
+import * as Parser from './parser.js'
+import * as Storage from './storage.js'
 
 const app  = express()
 const PORT = process.env.PORT || 3001
@@ -21,7 +24,7 @@ app.use(helmet())
 // CORS: só aceita requisições do frontend configurado
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-  methods: ['GET', 'POST', 'PATCH'],
+  methods: ['GET', 'POST', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type'],
 }))
 
@@ -36,6 +39,20 @@ const limiter = rateLimit({
   legacyHeaders: false,
 })
 app.use('/api/', limiter)
+
+// ── Multer — upload de arquivos ──────────────────────────────────────────────
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = file.originalname.toLowerCase()
+    if (ext.endsWith('.ofx') || ext.endsWith('.csv') || ext.endsWith('.qfx')) {
+      cb(null, true)
+    } else {
+      cb(new Error('Formato não suportado. Use .ofx, .qfx ou .csv'))
+    }
+  },
+})
 
 // Rate limiting mais restrito para o widget token (evita abuso)
 const widgetLimiter = rateLimit({
@@ -193,10 +210,15 @@ app.get('/api/transactions', async (req, res) => {
       )
     )
 
-    const allTxs = results
+    const belvoTxs = results
       .filter(r => r.status === 'fulfilled')
       .flatMap(r => r.value)
 
+    // Merge com transações importadas via OFX/CSV
+    const imported = Storage.loadAllImported()
+      .filter(t => t.value_date >= date_from && t.value_date <= date_to)
+
+    const allTxs = [...belvoTxs, ...imported]
     setCache(cacheKey, allTxs, TTL.transactions)
     ok(res, allTxs)
   } catch (e) {
@@ -219,10 +241,75 @@ app.post('/api/widget-token', widgetLimiter, async (req, res) => {
   }
 })
 
+// ── Import OFX/CSV ───────────────────────────────────────────────────────────
+
+// POST /api/import/upload — Upload e parse de arquivo OFX/CSV
+app.post('/api/import/upload', (req, res, next) => {
+  upload.single('file')(req, res, (uploadErr) => {
+    if (uploadErr) return err(res, uploadErr.message, 400)
+    next()
+  })
+}, async (req, res) => {
+  try {
+    if (!req.file) return err(res, 'Nenhum arquivo enviado.', 400)
+
+    const bank = req.body.bank || 'Importado'
+    const transactions = await Parser.parseFile(req.file.buffer, req.file.originalname)
+
+    // Seta instituição em cada transação
+    transactions.forEach(t => { if (!t._institution) t._institution = bank })
+
+    const batch = Storage.saveBatch(transactions, { bank, originalFilename: req.file.originalname })
+
+    // Limpa cache de transações para incluir os importados
+    clearCache('transactions')
+
+    ok(res, { ...batch, transactions })
+  } catch (e) {
+    err(res, e.message, 400)
+  }
+})
+
+// GET /api/import/transactions — Lista todas as transações importadas
+app.get('/api/import/transactions', (req, res) => {
+  try {
+    const { date_from, date_to } = req.query
+    let txs = Storage.loadAllImported()
+    if (date_from && date_to) {
+      txs = txs.filter(t => t.value_date >= date_from && t.value_date <= date_to)
+    }
+    ok(res, txs)
+  } catch (e) {
+    err(res, e.message)
+  }
+})
+
+// GET /api/import/batches — Lista batches importados
+app.get('/api/import/batches', (_, res) => {
+  try {
+    ok(res, Storage.listBatches())
+  } catch (e) {
+    err(res, e.message)
+  }
+})
+
+// DELETE /api/import/batches/:batchId — Deleta um batch
+app.delete('/api/import/batches/:batchId', (req, res) => {
+  try {
+    Storage.deleteBatch(req.params.batchId)
+    clearCache('transactions')
+    ok(res, { deleted: true })
+  } catch (e) {
+    err(res, e.message, 404)
+  }
+})
+
 // ── 404 catch-all ─────────────────────────────────────────────────────────────
 app.use((_, res) => res.status(404).json({ ok: false, error: 'Rota não encontrada.' }))
 
 // ── Start ─────────────────────────────────────────────────────────────────────
+Storage.initStorage()
+
 app.listen(PORT, () => {
   console.log(`
 ╔════════════════════════════════════╗

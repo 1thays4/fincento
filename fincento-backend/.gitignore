@@ -10,6 +10,9 @@ node_modules/
 *.log
 npm-debug.log*
 
+# Data (imported transactions)
+data/
+
 # Build
 dist/
 build/

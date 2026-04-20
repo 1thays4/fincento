@@ -35,6 +35,21 @@ const api = {
     if (!json.ok) throw new Error(json.error || `Erro ${res.status}`)
     return json.data
   },
+  async upload(path, file, fields = {}) {
+    const fd = new FormData()
+    fd.append('file', file)
+    Object.entries(fields).forEach(([k, v]) => fd.append(k, v))
+    const res = await fetch(`${API_URL}${path}`, { method: 'POST', body: fd })
+    const json = await res.json()
+    if (!json.ok) throw new Error(json.error || `Erro ${res.status}`)
+    return json.data
+  },
+  async del(path) {
+    const res = await fetch(`${API_URL}${path}`, { method: 'DELETE' })
+    const json = await res.json()
+    if (!json.ok) throw new Error(json.error || `Erro ${res.status}`)
+    return json.data
+  },
 }
 
 const monthStart = () => {
@@ -138,6 +153,10 @@ export default function App() {
   const [aiText, setAiText]       = useState('')
   const [aiLoading, setAiLoading] = useState(false)
   const [filterCat, setFilterCat] = useState('all')
+  const [uploading, setUploading] = useState(false)
+  const [uploadMsg, setUploadMsg] = useState(null)
+  const [uploadBank, setUploadBank] = useState('')
+  const [batches, setBatches]     = useState([])
 
   // ── Carrega dados via backend ───────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -203,6 +222,41 @@ export default function App() {
       setError('Erro ao abrir widget: ' + e.message)
     }
   }
+
+  // ── Upload OFX/CSV ──────────────────────────────────────────────────────────
+  const handleFileUpload = async (file) => {
+    setUploading(true)
+    setUploadMsg(null)
+    try {
+      const result = await api.upload('/api/import/upload', file, { bank: uploadBank || 'Importado' })
+      setUploadMsg(`${result.count} transações importadas!`)
+      setUploadBank('')
+      await loadBatches()
+      await load()
+    } catch (e) {
+      setUploadMsg('Erro: ' + e.message)
+    }
+    setUploading(false)
+  }
+
+  const loadBatches = async () => {
+    try {
+      const b = await api.get('/api/import/batches')
+      setBatches(b)
+    } catch { /* backend offline */ }
+  }
+
+  const deleteBatch = async (batchId) => {
+    try {
+      await api.del(`/api/import/batches/${batchId}`)
+      await loadBatches()
+      await load()
+    } catch (e) {
+      setError('Erro ao deletar: ' + e.message)
+    }
+  }
+
+  useEffect(() => { loadBatches() }, [])
 
   // ── Análise de IA ───────────────────────────────────────────────────────────
   const askAI = async () => {
@@ -513,7 +567,59 @@ export default function App() {
                   + Conectar novo banco
                 </button>
               )}
-              <div style={{ ...s.card, borderColor:'rgba(255,107,0,0.12)', marginTop:4 }}>
+              {/* ── Importar extrato ── */}
+              <div style={{ ...s.card, marginTop:12 }}>
+                <div style={s.cardT}>Importar extrato</div>
+                <div style={{ fontSize:12, color:'#555', marginBottom:12 }}>
+                  Envie um arquivo .ofx, .qfx ou .csv do seu banco
+                </div>
+                <input
+                  type="text"
+                  placeholder="Nome do banco (ex: Inter)"
+                  value={uploadBank}
+                  onChange={e => setUploadBank(e.target.value)}
+                  style={{ width:'100%', padding:'10px 12px', borderRadius:10, border:`1px solid ${BORDER}`, background:'rgba(255,255,255,0.04)', color:'#ccc', fontSize:13, marginBottom:8, outline:'none', boxSizing:'border-box' }}
+                />
+                <label style={{ ...s.connectBtn, display:'flex', alignItems:'center', justifyContent:'center', gap:8, cursor: uploading ? 'wait' : 'pointer', opacity: uploading ? 0.6 : 1, marginTop:0 }}>
+                  {uploading ? <span className="spin">⟳</span> : '📄'}
+                  {uploading ? 'Importando...' : 'Selecionar arquivo'}
+                  <input
+                    type="file"
+                    accept=".ofx,.qfx,.csv"
+                    style={{ display:'none' }}
+                    disabled={uploading}
+                    onChange={e => { if (e.target.files[0]) handleFileUpload(e.target.files[0]); e.target.value = '' }}
+                  />
+                </label>
+                {uploadMsg && (
+                  <div style={{ fontSize:12, marginTop:8, padding:'8px 12px', borderRadius:8, background: uploadMsg.startsWith('Erro') ? 'rgba(255,107,107,0.1)' : 'rgba(78,205,196,0.1)', color: uploadMsg.startsWith('Erro') ? '#FF6B6B' : '#4ECDC4' }}>
+                    {uploadMsg}
+                  </div>
+                )}
+              </div>
+
+              {/* ── Batches importados ── */}
+              {batches.length > 0 && (
+                <div style={{ ...s.card, marginTop:8 }}>
+                  <div style={s.cardT}>Importações</div>
+                  {batches.map(b => (
+                    <div key={b.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 0', borderBottom:`1px solid ${BORDER}` }}>
+                      <div>
+                        <div style={{ fontSize:13, fontWeight:600 }}>{b.bank}</div>
+                        <div style={{ fontSize:10, color:'#555' }}>{b.count} transações · {new Date(b.importedAt).toLocaleDateString('pt-BR')}</div>
+                      </div>
+                      <button
+                        onClick={() => deleteBatch(b.id)}
+                        style={{ padding:'6px 10px', borderRadius:8, border:`1px solid rgba(255,107,107,0.3)`, background:'rgba(255,107,107,0.08)', color:'#FF6B6B', fontSize:11, fontWeight:600, cursor:'pointer' }}
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ ...s.card, borderColor:'rgba(255,107,0,0.12)', marginTop:8 }}>
                 <div style={{ fontSize:12, fontWeight:700, color:ACCENT, marginBottom:8 }}>🔒 Segurança ativa</div>
                 <div style={{ fontSize:12, color:'#555', lineHeight:1.7 }}>
                   Credenciais Belvo ficam no servidor Node.js — nunca chegam ao browser.
