@@ -3,6 +3,7 @@ import { createClient } from '@libsql/client'
 import { readFileSync, readdirSync, existsSync } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
+import { setLearnedRules } from './parser.js'
 
 let db
 
@@ -53,7 +54,14 @@ export async function initStorage() {
     `CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(value_date)`,
     `CREATE INDEX IF NOT EXISTS idx_tx_batch ON transactions(batch_id)`,
     `CREATE INDEX IF NOT EXISTS idx_tx_type ON transactions(type)`,
+    `CREATE TABLE IF NOT EXISTS category_rules (
+      description TEXT PRIMARY KEY,
+      category TEXT NOT NULL
+    )`,
   ])
+
+  // Carrega regras aprendidas para o parser
+  await loadLearnedRules()
 
   // Migra dados do filesystem antigo (se existirem)
   await migrateFromFilesystem()
@@ -155,13 +163,34 @@ export async function loadAllImported() {
   return rows
 }
 
+// ── Regras aprendidas ───────────────────────────────────────────────────────
+async function loadLearnedRules() {
+  const { rows } = await db.execute('SELECT description, category FROM category_rules')
+  setLearnedRules(rows)
+}
+
+async function saveLearnedRule(description, category) {
+  await db.execute({
+    sql: 'INSERT OR REPLACE INTO category_rules (description, category) VALUES (?, ?)',
+    args: [description.toLowerCase().trim(), category],
+  })
+  await loadLearnedRules() // atualiza cache no parser
+}
+
 // ── Editar categoria ────────────────────────────────────────────────────────
 export async function updateTransactionCategory(txId, category) {
+  // Atualiza a transação
   const { rowsAffected } = await db.execute({
     sql: 'UPDATE transactions SET category_override = ? WHERE id = ?',
     args: [category, txId],
   })
   if (rowsAffected === 0) throw new Error('Transação não encontrada.')
+
+  // Aprende: salva a descrição → categoria para uso futuro
+  const { rows } = await db.execute({ sql: 'SELECT description FROM transactions WHERE id = ?', args: [txId] })
+  if (rows.length > 0) {
+    await saveLearnedRule(rows[0].description, category)
+  }
 }
 
 // ── Transação manual ────────────────────────────────────────────────────────
