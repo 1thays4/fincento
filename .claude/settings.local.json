@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npm install:*)",
       "Bash(curl:*)",
-      "Read(//c/Users/lorra/Downloads/fincento/**)"
+      "Read(//c/Users/lorra/Downloads/fincento/**)",
+      "Bash(npx vite:*)"
     ]
   }
 }

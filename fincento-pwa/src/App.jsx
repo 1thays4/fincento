@@ -4,6 +4,13 @@ import {
   AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
+import {
+  UtensilsCrossed, Pizza, Car, HeartPulse, Clapperboard, GraduationCap,
+  Home, CreditCard, Package, LayoutDashboard, ArrowDownUp, Sparkles,
+  Landmark, RefreshCw, Sun, Moon, LogOut, Upload, ShieldCheck, TrendingUp,
+  X, Plus, ChevronLeft, ChevronRight, Search, Download, Target, PartyPopper,
+  FileText, PieChart as PieChartIcon, Wallet, Smartphone, AlertTriangle,
+} from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
@@ -93,17 +100,19 @@ const api = {
 // ─────────────────────────────────────────────────────────────────────────────
 // 🗂 CATEGORIAS
 // ─────────────────────────────────────────────────────────────────────────────
+const ICON_SIZE = 16
 const CATS = {
-  'Food & Groceries': { key: 'alimentacao', label: 'Alimentacao',  icon: '🍽️', color: '#FF6B6B' },
-  'Restaurants':      { key: 'restaurantes', label: 'Restaurantes', icon: '🍔', color: '#E85D75' },
-  'Transport':        { key: 'transporte',  label: 'Transporte',   icon: '🚗', color: '#4ECDC4' },
-  'Health':           { key: 'saude',       label: 'Saude',        icon: '❤️', color: '#45B7D1' },
-  'Entertainment':    { key: 'lazer',       label: 'Lazer',        icon: '🎬', color: '#96CEB4' },
-  'Education':        { key: 'educacao',    label: 'Educacao',     icon: '📚', color: '#FFEAA7' },
-  'Housing':          { key: 'moradia',     label: 'Moradia',      icon: '🏠', color: '#DDA0DD' },
-  'Subscriptions':    { key: 'assinaturas', label: 'Assinaturas',  icon: '📱', color: '#F0A500' },
-  default:            { key: 'outros',      label: 'Outros',       icon: '📦', color: '#888' },
+  'Food & Groceries': { key: 'alimentacao', label: 'Alimentacao',  Icon: UtensilsCrossed, color: '#FF6B6B' },
+  'Restaurants':      { key: 'restaurantes', label: 'Restaurantes', Icon: Pizza,           color: '#E85D75' },
+  'Transport':        { key: 'transporte',  label: 'Transporte',   Icon: Car,             color: '#4ECDC4' },
+  'Health':           { key: 'saude',       label: 'Saude',        Icon: HeartPulse,      color: '#45B7D1' },
+  'Entertainment':    { key: 'lazer',       label: 'Lazer',        Icon: Clapperboard,    color: '#96CEB4' },
+  'Education':        { key: 'educacao',    label: 'Educacao',     Icon: GraduationCap,   color: '#FFEAA7' },
+  'Housing':          { key: 'moradia',     label: 'Moradia',      Icon: Home,            color: '#DDA0DD' },
+  'Subscriptions':    { key: 'assinaturas', label: 'Assinaturas',  Icon: CreditCard,      color: '#F0A500' },
+  default:            { key: 'outros',      label: 'Outros',       Icon: Package,         color: '#888' },
 }
+const CatIcon = ({ cat: c, size }) => { const I = c.Icon || Package; return <I size={size || ICON_SIZE} strokeWidth={2} /> }
 const cat = (c) => CATS[c] || CATS.default
 const UNIQUE_CATS = Object.entries(CATS).filter(([k]) => k !== 'default')
 
@@ -616,13 +625,13 @@ export default function App() {
     const tips = []
 
     // Relatório mensal
-    tips.push(`📊 RELATÓRIO — ${selMonthLabel.toUpperCase()}`)
+    tips.push(`RELATÓRIO — ${selMonthLabel.toUpperCase()}`)
     tips.push(`Receita: ${fmt(totalReceita)} | Gastos: ${fmt(total)} | Saldo: ${fmt(totalReceita - total)}`)
 
-    if (top) tips.push(`🔍 Sua maior categoria é ${top.icon} ${top.label} com ${fmt(top.value)} (${((top.value / total) * 100).toFixed(0)}% dos gastos). Revise se há itens que podem ser reduzidos.`)
+    if (top) tips.push(`Sua maior categoria é ${top.label} com ${fmt(top.value)} (${((top.value / total) * 100).toFixed(0)}% dos gastos). Revise se há itens que podem ser reduzidos.`)
     const subs = catData2.find(c => c.key === 'assinaturas')
-    if (subs) tips.push(`📱 Você tem gastos com assinaturas (${fmt(subs.value)}). Verifique se todas estão sendo usadas.`)
-    if (catData2.find(c => c.key === 'alimentacao')) tips.push(`🍽️ Alimentacao pesa no orçamento. Cozinhar mais em casa pode reduzir esse gasto em até 30%.`)
+    if (subs) tips.push(`Você tem gastos com assinaturas (${fmt(subs.value)}). Verifique se todas estão sendo usadas.`)
+    if (catData2.find(c => c.key === 'alimentacao')) tips.push(`Alimentacao pesa no orçamento. Cozinhar mais em casa pode reduzir esse gasto em até 30%.`)
 
     // Notificações de orçamento estourado
     const overBudget = []
@@ -630,31 +639,31 @@ export default function App() {
       const limit = budgets[c.key]
       if (limit && c.value > limit) {
         overBudget.push(c)
-        tips.push(`🚨 ${c.icon} ${c.label} ESTOUROU: ${fmt(c.value)} de ${fmt(limit)} (+${((c.value / limit - 1) * 100).toFixed(0)}% acima).`)
+        tips.push(`${c.label} ESTOUROU: ${fmt(c.value)} de ${fmt(limit)} (+${((c.value / limit - 1) * 100).toFixed(0)}% acima).`)
       } else if (limit && c.value > limit * 0.8) {
-        tips.push(`⚠️ ${c.icon} ${c.label} está em ${((c.value / limit) * 100).toFixed(0)}% do limite (${fmt(c.value)} / ${fmt(limit)}).`)
+        tips.push(`${c.label} está em ${((c.value / limit) * 100).toFixed(0)}% do limite (${fmt(c.value)} / ${fmt(limit)}).`)
       }
     }
 
     // Metas de economia
     if (goals.length > 0) {
-      tips.push('🎯 METAS DE ECONOMIA:')
+      tips.push('METAS DE ECONOMIA:')
       for (const g of goals) {
         const gPct = g.target_amount > 0 ? ((g.current_amount / g.target_amount) * 100).toFixed(0) : 0
         const done = g.current_amount >= g.target_amount
-        tips.push(`${done ? '🎉' : '🎯'} ${g.name}: ${fmt(g.current_amount)} / ${fmt(g.target_amount)} (${gPct}%)${done ? ' — Concluída!' : ''}`)
+        tips.push(`${done ? '✓' : '→'} ${g.name}: ${fmt(g.current_amount)} / ${fmt(g.target_amount)} (${gPct}%)${done ? ' — Concluída!' : ''}`)
       }
     }
 
     // Recorrentes
     if (recurring.length > 0) {
       const recTotal = recurring.filter(r => r.type === 'OUTFLOW').reduce((s, r) => s + Math.abs(r.amount), 0)
-      tips.push(`🔄 Você tem ${recurring.length} gasto(s) recorrente(s) totalizando ${fmt(recTotal)}/mês.`)
+      tips.push(`Você tem ${recurring.length} gasto(s) recorrente(s) totalizando ${fmt(recTotal)}/mês.`)
     }
 
-    if (pct2 > 80) tips.push(`⚠️ Você está gastando ${pct2}% da receita. O ideal é manter abaixo de 70%.`)
-    else if (totalReceita > 0) tips.push(`✅ Você está usando ${pct2}% da receita — bom controle!`)
-    tips.push(`💡 Dica: defina um limite mensal por categoria e acompanhe aqui no fin.centro.`)
+    if (pct2 > 80) tips.push(`Você está gastando ${pct2}% da receita. O ideal é manter abaixo de 70%.`)
+    else if (totalReceita > 0) tips.push(`Você está usando ${pct2}% da receita — bom controle!`)
+    tips.push(`Dica: defina um limite mensal por categoria e acompanhe aqui no fin.centro.`)
 
     setAiText(tips.join('\n\n'))
     setAiLoading(false)
@@ -686,44 +695,47 @@ export default function App() {
 
   const isDark = theme === 'dark'
 
-  // ── STYLES ──
-  const BG = isDark ? '#0D0D1A' : '#F5F5F8'
-  const CARD = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)'
-  const BORDER = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'
+  // ── STYLES — Glassmorphism ──
+  const BG = isDark ? '#080814' : '#E8E8EE'
+  const GLASS = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.55)'
+  const GLASS_BORDER = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.85)'
+  const BORDER = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'
   const ACCENT = '#FF6B00'
-  const TEXT = isDark ? '#E0E0FF' : '#1A1A2E'
-  const TEXT2 = isDark ? '#555' : '#999'
-  const TEXT3 = isDark ? '#444' : '#bbb'
-  const HEADER_BG = isDark ? 'rgba(13,13,26,0.95)' : 'rgba(245,245,248,0.95)'
-  const SHEET_BG = isDark ? '#13132A' : '#FFFFFF'
+  const TEXT = isDark ? '#E8E8FF' : '#12122A'
+  const TEXT2 = isDark ? '#7A7A9A' : '#6B6B80'
+  const TEXT3 = isDark ? '#50506A' : '#9999AA'
+  const HEADER_BG = isDark ? 'rgba(8,8,20,0.85)' : 'rgba(232,232,238,0.85)'
+  const SHEET_BG = isDark ? 'rgba(14,14,30,0.97)' : 'rgba(255,255,255,0.97)'
+  const blur = (n=12) => ({ backdropFilter:`blur(${n}px)`, WebkitBackdropFilter:`blur(${n}px)` })
+  const glassCard = { background:GLASS, border:`1px solid ${GLASS_BORDER}`, ...blur(20), boxShadow: isDark ? '0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)' : '0 8px 32px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.9)' }
 
   const s = {
-    root:       { minHeight:'100dvh', background:BG, color:TEXT, fontFamily:"'DM Sans','Segoe UI',sans-serif", display:'flex', flexDirection:'column', maxWidth:430, margin:'0 auto', position:'relative', overflowX:'hidden' },
-    header:     { padding:'16px 20px 12px', paddingTop:'calc(env(safe-area-inset-top,0px) + 16px)', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:`1px solid ${BORDER}`, background:HEADER_BG, backdropFilter:'blur(20px)', position:'sticky', top:0, zIndex:50 },
+    root:       { minHeight:'100dvh', background:BG, color:TEXT, fontFamily:"'DM Sans','Segoe UI',sans-serif", display:'flex', flexDirection:'column', maxWidth:430, margin:'0 auto', position:'relative', overflowX:'hidden', isolation:'isolate' },
+    header:     { padding:'16px 20px 12px', paddingTop:'calc(env(safe-area-inset-top,0px) + 16px)', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:`1px solid ${GLASS_BORDER}`, background: isDark ? 'rgba(8,8,20,0.7)' : 'rgba(255,255,255,0.6)', ...blur(24), position:'sticky', top:0, zIndex:50 },
     logo:       { fontSize:20, fontWeight:800, color:isDark?'#fff':'#1A1A2E' },
     logoA:      { color:ACCENT },
-    syncBtn:    { width:36, height:36, borderRadius:10, border:`1px solid rgba(255,107,0,0.3)`, background:'rgba(255,107,0,0.1)', color:ACCENT, fontSize:16, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' },
-    scroll:     { flex:1, overflowY:'auto', padding:'0 0 90px' },
-    bottomNav:  { position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)', width:'100%', maxWidth:430, background:isDark?'rgba(13,13,26,0.97)':'rgba(245,245,248,0.97)', backdropFilter:'blur(20px)', borderTop:`1px solid ${BORDER}`, display:'flex', paddingBottom:'env(safe-area-inset-bottom,0px)', zIndex:50 },
-    navItem:    (a) => ({ flex:1, display:'flex', flexDirection:'column', alignItems:'center', padding:'10px 0 8px', color:a?ACCENT:TEXT2, border:'none', background:'transparent', cursor:'pointer', fontSize:9, fontWeight:700, letterSpacing:'0.5px', textTransform:'uppercase', gap:4 }),
-    section:    { padding:'20px 16px 0' },
-    card:       { background:CARD, border:`1px solid ${BORDER}`, borderRadius:16, padding:'16px 18px', marginBottom:12 },
-    cardT:      { fontSize:11, color:TEXT2, textTransform:'uppercase', letterSpacing:'1px', marginBottom:10 },
-    kpiGrid:    { display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 },
-    kpiCard:    (c) => ({ background:CARD, border:`1px solid ${c}33`, borderRadius:14, padding:'14px 16px' }),
-    kpiLbl:     { fontSize:10, color:TEXT2, textTransform:'uppercase', letterSpacing:'1px', marginBottom:6 },
-    kpiVal:     (c) => ({ fontSize:22, fontWeight:800, color:c, fontVariantNumeric:'tabular-nums', lineHeight:1 }),
-    kpiSub:     { fontSize:10, color:TEXT3, marginTop:4 },
-    saldoCard:  { background:`linear-gradient(135deg,rgba(255,107,0,0.12),rgba(255,107,0,0.05))`, border:`1px solid rgba(255,107,0,0.2)`, borderRadius:16, padding:'18px 20px', marginBottom:12 },
-    txRow:      { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 0', borderBottom:`1px solid ${BORDER}`, cursor:'pointer' },
-    txIcon:     (c) => ({ width:38, height:38, borderRadius:11, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:17, background:c+'18', marginRight:12 }),
-    badge:      (c) => ({ fontSize:9, padding:'2px 7px', borderRadius:20, fontWeight:700, background:c+'22', color:c, textTransform:'uppercase', letterSpacing:'0.5px' }),
-    chip:       (a) => ({ padding:'7px 14px', borderRadius:20, fontSize:12, fontWeight:600, border:`1px solid ${a?ACCENT:BORDER}`, background:a?'rgba(255,107,0,0.12)':'transparent', color:a?ACCENT:TEXT2, cursor:'pointer', whiteSpace:'nowrap' }),
-    aiBtn:      { width:'100%', padding:'16px', borderRadius:14, border:'none', background:`linear-gradient(135deg,${ACCENT},#FF8C42)`, color:'#fff', fontSize:15, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, boxShadow:'0 4px 20px rgba(255,107,0,0.3)', marginBottom:16 },
-    overlay:    { position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', zIndex:100, display:'flex', alignItems:'flex-end', backdropFilter:'blur(6px)' },
-    sheet:      { background:SHEET_BG, borderRadius:'20px 20px 0 0', padding:'24px 20px', paddingBottom:'calc(env(safe-area-inset-bottom,0px) + 24px)', width:'100%', maxHeight:'80dvh', overflowY:'auto', border:`1px solid rgba(255,107,0,0.15)` },
-    connectBtn: { width:'100%', padding:'13px', borderRadius:12, border:`1px solid rgba(78,205,196,0.3)`, background:'rgba(78,205,196,0.08)', color:'#4ECDC4', cursor:'pointer', fontSize:13, fontWeight:700, marginTop:8 },
-    input:      { width:'100%', padding:'10px 12px', borderRadius:10, border:`1px solid ${BORDER}`, background:isDark?'rgba(255,255,255,0.04)':'rgba(0,0,0,0.03)', color:isDark?'#ccc':'#333', fontSize:13, outline:'none', boxSizing:'border-box' },
+    syncBtn:    { width:36, height:36, borderRadius:12, border:`1px solid ${isDark?'rgba(255,107,0,0.25)':BORDER}`, background:isDark?'rgba(255,107,0,0.08)':'rgba(255,107,0,0.06)', color:ACCENT, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.2s' },
+    scroll:     { flex:1, overflowY:'auto', padding:'0 0 90px', position:'relative', zIndex:1 },
+    bottomNav:  { position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)', width:'100%', maxWidth:430, background: isDark ? 'rgba(8,8,20,0.7)' : 'rgba(255,255,255,0.6)', ...blur(24), borderTop:`1px solid ${GLASS_BORDER}`, display:'flex', paddingBottom:'env(safe-area-inset-bottom,0px)', zIndex:50 },
+    navItem:    (a) => ({ flex:1, display:'flex', flexDirection:'column', alignItems:'center', padding:'10px 0 8px', color:a?ACCENT:TEXT2, border:'none', background:'transparent', cursor:'pointer', fontSize:9, fontWeight:600, letterSpacing:'0.5px', textTransform:'uppercase', gap:4, transition:'color 0.2s' }),
+    section:    { padding:'20px 20px 0' },
+    card:       { ...glassCard, borderRadius:20, padding:'18px 20px', marginBottom:14 },
+    cardT:      { fontSize:11, color:TEXT2, textTransform:'uppercase', letterSpacing:'1px', marginBottom:10, fontWeight:600 },
+    kpiGrid:    { display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:14 },
+    kpiCard:    (c) => ({ ...glassCard, border:`1px solid ${c}22`, borderRadius:18, padding:'16px 18px' }),
+    kpiLbl:     { fontSize:10, color:TEXT2, textTransform:'uppercase', letterSpacing:'1px', marginBottom:6, fontWeight:600 },
+    kpiVal:     (c) => ({ fontSize:24, fontWeight:800, color:c, fontVariantNumeric:'tabular-nums', lineHeight:1 }),
+    kpiSub:     { fontSize:10, color:TEXT3, marginTop:5 },
+    saldoCard:  { background: isDark ? 'linear-gradient(135deg,rgba(255,107,0,0.18),rgba(255,107,0,0.06))' : 'linear-gradient(135deg,rgba(255,107,0,0.14),rgba(255,107,0,0.04))', ...blur(20), border:`1px solid rgba(255,107,0,0.2)`, borderRadius:20, padding:'22px 20px', marginBottom:14, boxShadow: isDark ? '0 8px 32px rgba(255,107,0,0.1), inset 0 1px 0 rgba(255,255,255,0.05)' : '0 8px 32px rgba(255,107,0,0.08), inset 0 1px 0 rgba(255,255,255,0.6)' },
+    txRow:      { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'13px 0', borderBottom:`1px solid ${BORDER}`, cursor:'pointer', transition:'opacity 0.15s' },
+    txIcon:     (c) => ({ width:40, height:40, borderRadius:12, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', color:c, background: isDark ? `${c}18` : `${c}14`, ...blur(4), border:`1px solid ${c}25`, marginRight:12 }),
+    badge:      (c) => ({ fontSize:9, padding:'3px 8px', borderRadius:20, fontWeight:700, background:c+'18', color:c, textTransform:'uppercase', letterSpacing:'0.5px' }),
+    chip:       (a) => ({ padding:'8px 16px', borderRadius:24, fontSize:12, fontWeight:600, border:`1px solid ${a?ACCENT+'44':BORDER}`, background:a?'rgba(255,107,0,0.1)':isDark?'rgba(255,255,255,0.03)':'rgba(0,0,0,0.03)', ...blur(4), color:a?ACCENT:TEXT2, cursor:'pointer', whiteSpace:'nowrap', transition:'all 0.2s', display:'flex', alignItems:'center', gap:4 }),
+    aiBtn:      { width:'100%', padding:'16px', borderRadius:16, border:'none', background:`linear-gradient(135deg,${ACCENT},#FF8C42)`, color:'#fff', fontSize:15, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, boxShadow:'0 8px 32px rgba(255,107,0,0.25)', marginBottom:16, transition:'transform 0.15s, box-shadow 0.15s' },
+    overlay:    { position:'fixed', inset:0, background: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.3)', zIndex:100, display:'flex', alignItems:'flex-end', ...blur(12) },
+    sheet:      { background: isDark ? 'rgba(14,14,30,0.85)' : 'rgba(255,255,255,0.8)', ...blur(24), borderRadius:'24px 24px 0 0', padding:'24px 20px', paddingBottom:'calc(env(safe-area-inset-bottom,0px) + 24px)', width:'100%', maxHeight:'80dvh', overflowY:'auto', border:`1px solid ${GLASS_BORDER}`, boxShadow:'0 -8px 32px rgba(0,0,0,0.2)' },
+    connectBtn: { width:'100%', padding:'13px', borderRadius:14, border:`1px solid rgba(78,205,196,0.25)`, background:'rgba(78,205,196,0.06)', ...blur(4), color:'#4ECDC4', cursor:'pointer', fontSize:13, fontWeight:700, marginTop:8, transition:'all 0.2s' },
+    input:      { width:'100%', padding:'12px 14px', borderRadius:12, border:`1px solid ${BORDER}`, background:isDark?'rgba(255,255,255,0.05)':'rgba(0,0,0,0.03)', color:TEXT, fontSize:14, outline:'none', boxSizing:'border-box', transition:'border-color 0.2s' },
   }
 
   const monthNav = (
@@ -745,10 +757,10 @@ export default function App() {
   }
 
   const TABS = [
-    { id:'home',   icon:'🏠', label:'Inicio' },
-    { id:'txs',    icon:'📋', label:'Gastos' },
-    { id:'ia',     icon:'✦',  label:'IA' },
-    { id:'contas', icon:'🏦', label:'Contas' },
+    { id:'home',   Icon: LayoutDashboard, label:'Inicio' },
+    { id:'txs',    Icon: ArrowDownUp,     label:'Gastos' },
+    { id:'ia',     Icon: Sparkles,        label:'IA' },
+    { id:'contas', Icon: Landmark,        label:'Contas' },
   ]
 
   // ── PIN Screen ──
@@ -759,7 +771,11 @@ export default function App() {
           @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
           *{box-sizing:border-box;margin:0;padding:0} body{background:${BG}}
         `}</style>
-        <div style={{ textAlign:'center', width:'100%', maxWidth:280 }}>
+        <div style={{ position:'fixed', inset:0, pointerEvents:'none', zIndex:0, overflow:'hidden' }}>
+          <div style={{ position:'absolute', top:'-15%', right:'-10%', width:300, height:300, borderRadius:'50%', background:`radial-gradient(circle, rgba(255,107,0,${isDark?0.15:0.18}) 0%, transparent 70%)`, filter:'blur(40px)' }} />
+          <div style={{ position:'absolute', bottom:'10%', left:'-15%', width:280, height:280, borderRadius:'50%', background:`radial-gradient(circle, rgba(78,205,196,${isDark?0.1:0.12}) 0%, transparent 70%)`, filter:'blur(40px)' }} />
+        </div>
+        <div style={{ textAlign:'center', width:'100%', maxWidth:280, position:'relative', zIndex:1 }}>
           <div style={{ fontSize:28, fontWeight:800, color:TEXT, marginBottom:8 }}>fin<span style={{ color:ACCENT }}>.</span>centro</div>
           <div style={{ fontSize:13, color:TEXT2, marginBottom:32 }}>Digite seu PIN para acessar</div>
           <input
@@ -790,7 +806,7 @@ export default function App() {
     <div style={{ ...s.root, alignItems:'center', justifyContent:'center' }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} .spin{animation:spin 1s linear infinite;display:inline-block}`}</style>
       <div style={{ textAlign:'center' }}>
-        <div className="spin" style={{ fontSize:32, marginBottom:12 }}>⟳</div>
+        <div className="spin" style={{ marginBottom:12, color:ACCENT, display:'flex', justifyContent:'center' }}><RefreshCw size={28}/></div>
         <div style={{ color:TEXT3, fontSize:13 }}>Carregando{isMock ? ' (demo)' : ''}...</div>
       </div>
     </div>
@@ -803,17 +819,26 @@ export default function App() {
         *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
         body{background:${BG};overscroll-behavior:none}
         @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
         @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
-        .spin{animation:spin 1s linear infinite;display:inline-block}
-        .slide{animation:slideUp .3s ease both}
+        .spin{animation:spin 1s linear infinite;display:inline-flex}
+        .fade-in{animation:fadeIn .35s ease both}
         .blink{animation:blink 2s ease infinite}
         ::-webkit-scrollbar{display:none}
+        button:active{transform:scale(0.97)}
       `}</style>
 
+      {/* Gradient blobs for glassmorphism */}
+      <div style={{ position:'fixed', inset:0, pointerEvents:'none', zIndex:0, overflow:'hidden', maxWidth:430, margin:'0 auto' }}>
+        <div style={{ position:'absolute', top:'-10%', right:'-20%', width:340, height:340, borderRadius:'50%', background: isDark ? 'radial-gradient(circle, rgba(255,107,0,0.12) 0%, transparent 70%)' : 'radial-gradient(circle, rgba(255,107,0,0.15) 0%, transparent 70%)', filter:'blur(40px)' }} />
+        <div style={{ position:'absolute', top:'30%', left:'-25%', width:300, height:300, borderRadius:'50%', background: isDark ? 'radial-gradient(circle, rgba(78,205,196,0.08) 0%, transparent 70%)' : 'radial-gradient(circle, rgba(78,205,196,0.12) 0%, transparent 70%)', filter:'blur(40px)' }} />
+        <div style={{ position:'absolute', top:'60%', right:'-15%', width:280, height:280, borderRadius:'50%', background: isDark ? 'radial-gradient(circle, rgba(150,100,255,0.08) 0%, transparent 70%)' : 'radial-gradient(circle, rgba(150,100,255,0.1) 0%, transparent 70%)', filter:'blur(40px)' }} />
+        <div style={{ position:'absolute', bottom:'5%', left:'-10%', width:250, height:250, borderRadius:'50%', background: isDark ? 'radial-gradient(circle, rgba(255,107,0,0.06) 0%, transparent 70%)' : 'radial-gradient(circle, rgba(255,107,0,0.08) 0%, transparent 70%)', filter:'blur(40px)' }} />
+      </div>
+
       {isMock && (
-        <div style={{ background:'rgba(255,107,0,0.1)', padding:'7px 16px', textAlign:'center', fontSize:11, color:ACCENT, borderBottom:`1px solid rgba(255,107,0,0.15)` }}>
-          ⚠ Backend offline — modo demo
+        <div style={{ background:'rgba(255,107,0,0.06)', padding:'8px 16px', textAlign:'center', fontSize:11, color:ACCENT, borderBottom:`1px solid rgba(255,107,0,0.1)`, display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <AlertTriangle size={12} style={{ marginRight:4 }}/> Backend offline — modo demo
         </div>
       )}
 
@@ -828,19 +853,19 @@ export default function App() {
           )}
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-          <button onClick={toggleTheme} style={{ ...s.syncBtn, fontSize:14, border:`1px solid ${BORDER}`, background:'transparent', color:TEXT2 }} title="Tema">{isDark ? '☀' : '🌙'}</button>
+          <button onClick={toggleTheme} style={{ ...s.syncBtn, border:`1px solid ${BORDER}`, background:'transparent', color:TEXT2 }} title="Tema">{isDark ? <Sun size={16}/> : <Moon size={16}/>}</button>
           {authToken && needsAuth !== false && (
-            <button onClick={logout} style={{ ...s.syncBtn, fontSize:12, border:`1px solid rgba(255,107,107,0.3)`, background:'rgba(255,107,107,0.08)', color:'#FF6B6B' }} title="Sair">⏻</button>
+            <button onClick={logout} style={{ ...s.syncBtn, border:`1px solid rgba(255,107,107,0.3)`, background:'rgba(255,107,107,0.08)', color:'#FF6B6B' }} title="Sair"><LogOut size={14}/></button>
           )}
           <button style={s.syncBtn} onClick={sync} disabled={syncing} aria-label="Sincronizar">
-            <span className={syncing ? 'spin' : ''}>⟳</span>
+            <span className={syncing ? 'spin' : ''} style={{ display:'flex' }}><RefreshCw size={16}/></span>
           </button>
         </div>
       </header>
 
       {error && (
-        <div style={{ margin:'10px 16px 0', background:'rgba(255,107,107,0.1)', border:'1px solid rgba(255,107,107,0.2)', borderRadius:10, padding:'10px 14px', fontSize:12, color:'#FF6B6B' }}>
-          ⚠ {error}
+        <div style={{ margin:'10px 20px 0', background:'rgba(255,107,107,0.06)', border:'1px solid rgba(255,107,107,0.15)', borderRadius:14, padding:'10px 14px', fontSize:12, color:'#FF6B6B', display:'flex', alignItems:'center' }}>
+          <AlertTriangle size={12} style={{ marginRight:4, flexShrink:0 }}/> {error}
         </div>
       )}
 
@@ -848,12 +873,12 @@ export default function App() {
 
         {/* ── HOME ── */}
         {tab === 'home' && (
-          <div className="slide">
+          <div className="fade-in">
             <div style={s.section}>
               {monthNav}
               <div style={s.saldoCard}>
                 <div style={{ fontSize:11, color:'rgba(255,107,0,0.7)', textTransform:'uppercase', letterSpacing:'1px', marginBottom:6 }}>Saldo do mes</div>
-                <div style={{ fontSize:34, fontWeight:800, color:saldo>=0?TEXT:'#FF6B6B', fontVariantNumeric:'tabular-nums' }}>{fmt(saldo)}</div>
+                <div style={{ fontSize:38, fontWeight:800, color:saldo>=0?TEXT:'#FF6B6B', fontVariantNumeric:'tabular-nums', fontFamily:'DM Mono,monospace' }}>{fmt(saldo)}</div>
                 <div style={{ fontSize:12, color:isDark?'rgba(255,255,255,0.3)':'rgba(0,0,0,0.3)', marginTop:4, textTransform:'capitalize' }}>{selMonthLabel}</div>
               </div>
               <div style={s.kpiGrid}>
@@ -918,13 +943,13 @@ export default function App() {
                           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                             <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:12 }}>
                               <span style={{ width:8, height:8, borderRadius:'50%', background:c.color, display:'inline-block', flexShrink:0 }}/>
-                              {c.icon} {c.label}
+                              <CatIcon cat={c}/> {c.label}
                             </div>
                             <span style={{ fontSize:11, color:TEXT2, fontFamily:'DM Mono,monospace' }}>{fmt(c.value)}</span>
                           </div>
                           {limit != null && (
                             <>
-                              <div style={{ marginTop:3, height:3, borderRadius:2, background:isDark?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)' }}>
+                              <div style={{ marginTop:3, height:3, borderRadius:2, background:isDark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.06)' }}>
                                 <div style={{ height:'100%', borderRadius:2, width:`${pct}%`, background:over?'#FF6B6B':'#4ECDC4', transition:'width 0.3s' }} />
                               </div>
                               <div style={{ fontSize:9, color:over?'#FF6B6B':TEXT2, marginTop:1 }}>
@@ -948,7 +973,7 @@ export default function App() {
                 {[...txs].sort((a,b) => new Date(b.date)-new Date(a.date)).slice(0,5).map(t => (
                   <div key={t.id} style={s.txRow} onClick={() => setEditingTx(t)}>
                     <div style={{ display:'flex', alignItems:'center' }}>
-                      <div style={s.txIcon(t.cat.color)}>{t.cat.icon}</div>
+                      <div style={s.txIcon(t.cat.color)}><CatIcon cat={t.cat}/></div>
                       <div>
                         <div style={{ fontSize:13, fontWeight:600, marginBottom:2 }}>{t.desc}</div>
                         <div style={{ display:'flex', gap:5, alignItems:'center' }}>
@@ -974,11 +999,11 @@ export default function App() {
                     <div key={r.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 0', borderBottom:`1px solid ${BORDER}` }}>
                       <div>
                         <div style={{ fontSize:13, fontWeight:600 }}>{r.description}</div>
-                        <div style={{ fontSize:10, color:TEXT2 }}>Dia {r.day_of_month} · {r.type === 'OUTFLOW' ? 'Gasto' : 'Receita'} · {cat(r.category).icon} {cat(r.category).label}</div>
+                        <div style={{ fontSize:10, color:TEXT2 }}>Dia {r.day_of_month} · {r.type === 'OUTFLOW' ? 'Gasto' : 'Receita'} · {cat(r.category).label}</div>
                       </div>
                       <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                         <span style={{ fontSize:13, fontWeight:700, color:r.type==='OUTFLOW'?'#FF6B6B':'#4ECDC4', fontFamily:'DM Mono,monospace' }}>{r.type==='OUTFLOW'?'-':'+'}{fmt(r.amount)}</span>
-                        <button onClick={() => deleteRecurring(r.id)} style={{ fontSize:11, color:'#FF6B6B', background:'none', border:'none', cursor:'pointer' }}>✕</button>
+                        <button onClick={() => deleteRecurring(r.id)} style={{ fontSize:11, color:'#FF6B6B', background:'none', border:'none', cursor:'pointer' }}><X size={12}/></button>
                       </div>
                     </div>
                   ))}
@@ -999,13 +1024,13 @@ export default function App() {
                     return (
                       <div key={g.id} style={{ padding:'10px 0', borderBottom:`1px solid ${BORDER}` }}>
                         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
-                          <div style={{ fontSize:13, fontWeight:600 }}>{done ? '🎉 ' : '🎯 '}{g.name}</div>
+                          <div style={{ fontSize:13, fontWeight:600, display:'flex', alignItems:'center', gap:6 }}>{done ? <PartyPopper size={14} style={{ color:'#4ECDC4' }}/> : <Target size={14} style={{ color:ACCENT }}/>}{g.name}</div>
                           <div style={{ display:'flex', gap:6 }}>
                             <button onClick={() => { setShowGoalDeposit(g); setDepositAmount('') }} style={{ fontSize:10, color:'#4ECDC4', background:'none', border:'none', cursor:'pointer', fontWeight:600 }}>+ Depositar</button>
-                            <button onClick={() => deleteGoal(g.id)} style={{ fontSize:10, color:'#FF6B6B', background:'none', border:'none', cursor:'pointer' }}>✕</button>
+                            <button onClick={() => deleteGoal(g.id)} style={{ fontSize:10, color:'#FF6B6B', background:'none', border:'none', cursor:'pointer' }}><X size={12}/></button>
                           </div>
                         </div>
-                        <div style={{ height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)', marginBottom:4 }}>
+                        <div style={{ height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.06)', marginBottom:4 }}>
                           <div style={{ height:'100%', borderRadius:2, width:`${pct}%`, background:done?'#4ECDC4':'#FF6B00', transition:'width 0.3s' }} />
                         </div>
                         <div style={{ fontSize:10, color:TEXT2 }}>
@@ -1023,13 +1048,13 @@ export default function App() {
 
         {/* ── TRANSACOES ── */}
         {tab === 'txs' && (
-          <div className="slide">
+          <div className="fade-in">
             <div style={s.section}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
-                <div style={{ fontSize:18, fontWeight:800, color:isDark?'#fff':'#1A1A2E' }}>Transações</div>
+                <div style={{ fontSize:20, fontWeight:700, color:isDark?'#fff':'#1A1A2E' }}>Transações</div>
                 <div style={{ display:'flex', gap:8 }}>
                   {!isMock && <button onClick={exportCSV} style={{ padding:'6px 12px', borderRadius:8, border:`1px solid ${BORDER}`, background:'transparent', color:TEXT2, fontSize:11, fontWeight:600, cursor:'pointer' }}>CSV ↓</button>}
-                  {!isMock && <button onClick={() => { setNewTx({ desc:'', amount:'', date:selDateFrom.slice(0,8) + String(new Date().getDate()).padStart(2,'0'), cat:'', type:'OUTFLOW' }); setShowAddTx(true) }} style={{ ...s.syncBtn, width:32, height:32, fontSize:18 }}>+</button>}
+                  {!isMock && <button onClick={() => { setNewTx({ desc:'', amount:'', date:selDateFrom.slice(0,8) + String(new Date().getDate()).padStart(2,'0'), cat:'', type:'OUTFLOW' }); setShowAddTx(true) }} style={{ ...s.syncBtn, width:32, height:32 }}><Plus size={16}/></button>}
                 </div>
               </div>
 
@@ -1066,7 +1091,7 @@ export default function App() {
                     <button style={s.chip(filterCat==='all')} onClick={()=>setFilterCat('all')}>Todas</button>
                     {catData.map(c => (
                       <button key={c.key} style={s.chip(filterCat===c.key)} onClick={()=>setFilterCat(c.key)}>
-                        {c.icon} {c.label}
+                        <CatIcon cat={c}/> {c.label}
                       </button>
                     ))}
                   </div>
@@ -1078,7 +1103,7 @@ export default function App() {
                     {filteredTxs.map(t => (
                       <div key={t.id} style={s.txRow} onClick={() => setEditingTx(t)}>
                         <div style={{ display:'flex', alignItems:'center', minWidth:0 }}>
-                          <div style={s.txIcon(t.cat.color)}>{t.cat.icon}</div>
+                          <div style={s.txIcon(t.cat.color)}><CatIcon cat={t.cat}/></div>
                           <div style={{ minWidth:0 }}>
                             <div style={{ fontSize:13, fontWeight:600, marginBottom:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:160 }}>{t.desc}</div>
                             <div style={{ display:'flex', gap:5 }}>
@@ -1104,7 +1129,7 @@ export default function App() {
                     {filteredInflows.map(t => (
                       <div key={t.id} style={s.txRow} onClick={() => setEditingTx(t)}>
                         <div style={{ display:'flex', alignItems:'center', minWidth:0 }}>
-                          <div style={s.txIcon('#4ECDC4')}>💰</div>
+                          <div style={s.txIcon('#4ECDC4')}><TrendingUp size={16}/></div>
                           <div style={{ minWidth:0 }}>
                             <div style={{ fontSize:13, fontWeight:600, marginBottom:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:160 }}>{t.desc}</div>
                             <div style={{ display:'flex', gap:5 }}>
@@ -1125,15 +1150,15 @@ export default function App() {
 
         {/* ── IA ── */}
         {tab === 'ia' && (
-          <div className="slide">
+          <div className="fade-in">
             <div style={s.section}>
-              <div style={{ fontSize:18, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:4 }}>IA Financeira</div>
+              <div style={{ fontSize:20, fontWeight:700, color:isDark?'#fff':'#1A1A2E', marginBottom:4 }}>IA Financeira</div>
               <div style={{ fontSize:12, color:TEXT2, marginBottom:20 }}>Analise dos seus {txs.length} gastos deste mês</div>
-              <button style={s.aiBtn} onClick={askAI}>✦ Analisar com IA</button>
+              <button style={s.aiBtn} onClick={askAI}><Sparkles size={18}/> Analisar com IA</button>
               <div style={s.card}>
                 <div style={s.cardT}>Resumo</div>
                 {[
-                  { label:'Maior categoria',    value: catData[0] ? `${catData[0].icon} ${catData[0].label} (${fmt(catData[0].value)})` : '—' },
+                  { label:'Maior categoria',    value: catData[0] ? `${catData[0].label} (${fmt(catData[0].value)})` : '—' },
                   { label:'No de transações',   value: txs.length },
                   { label:'Ticket medio',        value: txs.length ? fmt(totalGasto/txs.length) : '—' },
                   { label:'% da receita gasta', value: totalReceita > 0 ? `${pctReceita}%` : '—' },
@@ -1150,15 +1175,15 @@ export default function App() {
 
         {/* ── CONTAS ── */}
         {tab === 'contas' && (
-          <div className="slide">
+          <div className="fade-in">
             <div style={s.section}>
-              <div style={{ fontSize:18, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:4 }}>Contas</div>
+              <div style={{ fontSize:20, fontWeight:700, color:isDark?'#fff':'#1A1A2E', marginBottom:4 }}>Contas</div>
               <div style={{ fontSize:12, color:TEXT2, marginBottom:16 }}>
                 {isMock ? 'Modo demo — backend offline' : `${links.length} links via Belvo`}
               </div>
               {links.map((l, i) => (
                 <div key={l.id||i} style={{ ...s.card, display:'flex', alignItems:'center', gap:14 }}>
-                  <div style={{ fontSize:26 }}>🏦</div>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'center', width:44, height:44, borderRadius:12, background:`rgba(78,205,196,0.08)`, color:'#4ECDC4' }}><Landmark size={22}/></div>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:14, fontWeight:700 }}>{l.institution?.name || l.id}</div>
                     <div style={{ fontSize:11, color:TEXT2, marginTop:2 }}>{l.status==='valid'?'Conectado':'Inativo'}</div>
@@ -1186,7 +1211,7 @@ export default function App() {
                   style={{ ...s.input, marginBottom:8 }}
                 />
                 <label style={{ ...s.connectBtn, display:'flex', alignItems:'center', justifyContent:'center', gap:8, cursor: uploading ? 'wait' : 'pointer', opacity: uploading ? 0.6 : 1, marginTop:0 }}>
-                  {uploading ? <span className="spin">⟳</span> : '📄'}
+                  {uploading ? <span className="spin" style={{ display:'flex' }}><RefreshCw size={16}/></span> : <Upload size={16}/>}
                   {uploading ? 'Importando...' : 'Selecionar arquivo'}
                   <input
                     type="file"
@@ -1240,7 +1265,7 @@ export default function App() {
               )}
 
               <div style={{ ...s.card, borderColor:'rgba(255,107,0,0.12)', marginTop:8 }}>
-                <div style={{ fontSize:12, fontWeight:700, color:ACCENT, marginBottom:8 }}>🔒 Segurança ativa</div>
+                <div style={{ fontSize:12, fontWeight:700, color:ACCENT, marginBottom:8, display:'flex', alignItems:'center', gap:6 }}><ShieldCheck size={14}/> Segurança ativa</div>
                 <div style={{ fontSize:12, color:TEXT2, lineHeight:1.7 }}>
                   Credenciais ficam no servidor Node.js — nunca chegam ao browser.
                   Dados persistidos no Turso (SQLite na nuvem).
@@ -1255,7 +1280,7 @@ export default function App() {
       <nav style={s.bottomNav}>
         {TABS.map(t => (
           <button key={t.id} style={s.navItem(tab===t.id)} onClick={()=>{ setTab(t.id); setSearchTerm('') }}>
-            <span style={{ fontSize:20 }}>{t.icon}</span>
+            <t.Icon size={20} strokeWidth={tab===t.id ? 2.2 : 1.5} />
             {t.label}
           </button>
         ))}
@@ -1265,11 +1290,11 @@ export default function App() {
       {aiOpen && (
         <div style={s.overlay} onClick={()=>!aiLoading&&setAiOpen(false)}>
           <div style={s.sheet} onClick={e=>e.stopPropagation()}>
-            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
-            <div style={{ fontSize:15, fontWeight:800, color:ACCENT, marginBottom:14 }}>✦ Analise da IA</div>
+            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.12)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
+            <div style={{ fontSize:15, fontWeight:800, color:ACCENT, marginBottom:14, display:'flex', alignItems:'center', gap:8 }}><Sparkles size={18}/> Analise da IA</div>
             {aiLoading ? (
               <div style={{ textAlign:'center', padding:'30px 0' }}>
-                <div className="spin" style={{ fontSize:28, marginBottom:12 }}>⟳</div>
+                <div className="spin" style={{ marginBottom:12, color:ACCENT, display:'flex', justifyContent:'center' }}><RefreshCw size={24}/></div>
                 <div style={{ color:TEXT3, fontSize:13 }}>Analisando {txs.length} transações...</div>
               </div>
             ) : (
@@ -1290,7 +1315,7 @@ export default function App() {
       {editingTx && (
         <div style={s.overlay} onClick={() => { setEditingTx(null); setEditMode(false) }}>
           <div style={s.sheet} onClick={e => e.stopPropagation()}>
-            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
+            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.12)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
 
             {editMode ? (
               <>
@@ -1331,7 +1356,7 @@ export default function App() {
                         cursor:'pointer', fontSize:13, fontWeight:600, display:'flex', alignItems:'center', gap:6,
                       }}
                     >
-                      {info.icon} {info.label}
+                      <CatIcon cat={info}/> {info.label}
                     </button>
                   ))}
                 </div>
@@ -1348,7 +1373,7 @@ export default function App() {
       {showAddTx && (
         <div style={s.overlay} onClick={() => setShowAddTx(false)}>
           <div style={s.sheet} onClick={e => e.stopPropagation()}>
-            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
+            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.12)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
             <div style={{ fontSize:15, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:16 }}>Nova transação</div>
 
             <div style={{ display:'flex', gap:8, marginBottom:12 }}>
@@ -1364,7 +1389,7 @@ export default function App() {
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginBottom:16 }}>
               {UNIQUE_CATS.map(([belvoKey, info]) => (
                 <button key={belvoKey} onClick={() => setNewTx(p => ({...p, cat:belvoKey}))} style={{ padding:'10px 8px', borderRadius:10, border:`1px solid ${newTx.cat===belvoKey?info.color:BORDER}`, background:newTx.cat===belvoKey?info.color+'22':'transparent', color:newTx.cat===belvoKey?info.color:TEXT2, cursor:'pointer', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:4 }}>
-                  {info.icon} {info.label}
+                  <CatIcon cat={info}/> {info.label}
                 </button>
               ))}
             </div>
@@ -1384,7 +1409,7 @@ export default function App() {
       {showAddRecurring && (
         <div style={s.overlay} onClick={() => setShowAddRecurring(false)}>
           <div style={s.sheet} onClick={e => e.stopPropagation()}>
-            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
+            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.12)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
             <div style={{ fontSize:15, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:16 }}>Nova recorrente</div>
             <div style={{ display:'flex', gap:8, marginBottom:12 }}>
               <button style={s.chip(newRec.type==='OUTFLOW')} onClick={() => setNewRec(p => ({...p, type:'OUTFLOW'}))}>Gasto</button>
@@ -1397,7 +1422,7 @@ export default function App() {
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginBottom:16 }}>
               {UNIQUE_CATS.map(([belvoKey, info]) => (
                 <button key={belvoKey} onClick={() => setNewRec(p => ({...p, cat:belvoKey}))} style={{ padding:'10px 8px', borderRadius:10, border:`1px solid ${newRec.cat===belvoKey?info.color:BORDER}`, background:newRec.cat===belvoKey?info.color+'22':'transparent', color:newRec.cat===belvoKey?info.color:TEXT2, cursor:'pointer', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:4 }}>
-                  {info.icon} {info.label}
+                  <CatIcon cat={info}/> {info.label}
                 </button>
               ))}
             </div>
@@ -1410,7 +1435,7 @@ export default function App() {
       {showAddGoal && (
         <div style={s.overlay} onClick={() => setShowAddGoal(false)}>
           <div style={s.sheet} onClick={e => e.stopPropagation()}>
-            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
+            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.12)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
             <div style={{ fontSize:15, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:16 }}>Nova meta de economia</div>
             <input placeholder="Nome da meta (ex: Viagem)" value={newGoal.name} onChange={e => setNewGoal(p => ({...p, name:e.target.value}))} style={{ ...s.input, marginBottom:8 }} />
             <input placeholder="Valor alvo (R$)" inputMode="decimal" value={newGoal.target} onChange={e => setNewGoal(p => ({...p, target:e.target.value}))} style={{ ...s.input, marginBottom:8 }} />
@@ -1424,7 +1449,7 @@ export default function App() {
       {showGoalDeposit && (
         <div style={s.overlay} onClick={() => setShowGoalDeposit(null)}>
           <div style={s.sheet} onClick={e => e.stopPropagation()}>
-            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
+            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.12)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
             <div style={{ fontSize:15, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:4 }}>Depositar em: {showGoalDeposit.name}</div>
             <div style={{ fontSize:12, color:TEXT2, marginBottom:16 }}>Atual: {fmt(showGoalDeposit.current_amount)} / {fmt(showGoalDeposit.target_amount)}</div>
             <input placeholder="Valor a depositar" inputMode="decimal" value={depositAmount} onChange={e => setDepositAmount(e.target.value)} style={{ ...s.input, marginBottom:16 }} />
@@ -1437,14 +1462,20 @@ export default function App() {
       {showOnboarding && (
         <div style={s.overlay} onClick={() => {}}>
           <div style={{ ...s.sheet, textAlign:'center' }}>
-            <div style={{ fontSize:36, marginBottom:16 }}>🎉</div>
+            <div style={{ marginBottom:16, color:ACCENT, display:'flex', justifyContent:'center' }}><Sparkles size={36}/></div>
             <div style={{ fontSize:22, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:8 }}>Bem-vindo ao fin<span style={{ color:ACCENT }}>.</span>centro</div>
             <div style={{ fontSize:14, color:TEXT2, lineHeight:1.8, marginBottom:20 }}>
               Seu app de finanças pessoais. Importe extratos OFX/CSV, acompanhe gastos por categoria, defina orçamentos e metas de economia.
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:20, textAlign:'left' }}>
-              {['📄 Importe extratos do seu banco', '📊 Veja gastos por categoria', '🎯 Defina metas de economia', '💰 Acompanhe receitas e gastos', '📱 Funciona offline (PWA)'].map(t => (
-                <div key={t} style={{ fontSize:13, color:isDark?'#ccc':'#444', padding:'8px 12px', background:CARD, borderRadius:8 }}>{t}</div>
+              {[
+                { icon: <FileText size={15}/>, text: 'Importe extratos do seu banco' },
+                { icon: <PieChartIcon size={15}/>, text: 'Veja gastos por categoria' },
+                { icon: <Target size={15}/>, text: 'Defina metas de economia' },
+                { icon: <Wallet size={15}/>, text: 'Acompanhe receitas e gastos' },
+                { icon: <Smartphone size={15}/>, text: 'Funciona offline (PWA)' },
+              ].map(t => (
+                <div key={t.text} style={{ fontSize:13, color:TEXT, padding:'10px 14px', background:CARD, borderRadius:10, display:'flex', alignItems:'center', gap:10, border:`1px solid ${BORDER}` }}>{t.icon} {t.text}</div>
               ))}
             </div>
             <button onClick={() => { setShowOnboarding(false); localStorage.setItem('fc_onboarded', '1') }} style={s.aiBtn}>Começar</button>
@@ -1456,13 +1487,13 @@ export default function App() {
       {showBudgetEditor && (
         <div style={s.overlay} onClick={() => setShowBudgetEditor(false)}>
           <div style={s.sheet} onClick={e => e.stopPropagation()}>
-            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
+            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.12)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
             <div style={{ fontSize:15, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:4 }}>Limites por categoria</div>
             <div style={{ fontSize:12, color:TEXT2, marginBottom:16 }}>Defina o limite mensal para cada categoria. Deixe vazio para remover.</div>
 
             {UNIQUE_CATS.map(([, info]) => (
               <div key={info.key} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-                <div style={{ fontSize:14, width:30, textAlign:'center' }}>{info.icon}</div>
+                <div style={{ width:30, display:'flex', alignItems:'center', justifyContent:'center', color:info.color }}><CatIcon cat={info}/></div>
                 <div style={{ flex:1, fontSize:13, color:TEXT }}>{info.label}</div>
                 <input
                   type="number"
