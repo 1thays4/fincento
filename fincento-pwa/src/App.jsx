@@ -216,6 +216,9 @@ export default function App() {
   // ── Busca ──
   const [searchTerm, setSearchTerm] = useState('')
 
+  // ── Filtro por banco ──
+  const [filterBank, setFilterBank] = useState('all')
+
   // ── Gastos/Receitas toggle ──
   const [txViewMode, setTxViewMode] = useState('gastos')
 
@@ -230,6 +233,24 @@ export default function App() {
   const [budgets, setBudgets]       = useState({})
   const [showBudgetEditor, setShowBudgetEditor] = useState(false)
   const [budgetInputs, setBudgetInputs] = useState({})
+
+  // ── Recorrentes ──
+  const [recurring, setRecurring]   = useState([])
+  const [showAddRecurring, setShowAddRecurring] = useState(false)
+  const [newRec, setNewRec]         = useState({ desc:'', amount:'', type:'OUTFLOW', cat:'', day:'1' })
+
+  // ── Metas de economia ──
+  const [goals, setGoals]           = useState([])
+  const [showAddGoal, setShowAddGoal] = useState(false)
+  const [newGoal, setNewGoal]       = useState({ name:'', target:'', deadline:'' })
+  const [showGoalDeposit, setShowGoalDeposit] = useState(null)
+  const [depositAmount, setDepositAmount] = useState('')
+
+  // ── Tema ──
+  const [theme, setTheme]           = useState(() => localStorage.getItem('fc_theme') || 'dark')
+
+  // ── Onboarding ──
+  const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem('fc_onboarded'))
 
   // ── Auth fail handler ──
   _onAuthFail = () => {
@@ -324,11 +345,13 @@ export default function App() {
         setFlow(MOCK_FLOW)
       } else {
         setIsMock(false)
-        const [allLinks, rawTxs, flowData, budgetData] = await Promise.all([
+        const [allLinks, rawTxs, flowData, budgetData, recData, goalsData] = await Promise.all([
           api.get('/api/links'),
           api.get(`/api/transactions?date_from=${selDateFrom}&date_to=${selDateTo}`),
           api.get('/api/stats/monthly-flow?months=6'),
           api.get('/api/budgets'),
+          api.get('/api/recurring').catch(() => []),
+          api.get('/api/savings-goals').catch(() => []),
         ])
         setLinks(allLinks)
         setTxs(processTxs(rawTxs))
@@ -337,6 +360,8 @@ export default function App() {
         const bMap = {}
         budgetData.forEach(b => { bMap[b.category_key] = b.limit_amount })
         setBudgets(bMap)
+        setRecurring(recData)
+        setGoals(goalsData)
       }
       setLastSync(new Date())
     } catch (e) {
@@ -434,6 +459,39 @@ export default function App() {
     } catch (e) { setError(e.message) }
   }
 
+  // ── Deletar transação ──
+  const deleteTransaction = async (txId) => {
+    if (!confirm('Deletar esta transação?')) return
+    try {
+      await api.del(`/api/transactions/${txId}`)
+      setEditingTx(null)
+      await load()
+    } catch (e) { setError(e.message) }
+  }
+
+  // ── Editar transação ──
+  const [editMode, setEditMode] = useState(false)
+  const [editFields, setEditFields] = useState({})
+
+  const startEditTx = (tx) => {
+    setEditFields({ desc: tx.desc, amount: String(tx.amount), date: tx.date, type: tx.type })
+    setEditMode(true)
+  }
+
+  const saveEditTx = async () => {
+    try {
+      await api.patch(`/api/transactions/${editingTx.id}`, {
+        description: editFields.desc,
+        amount: parseFloat(editFields.amount),
+        value_date: editFields.date,
+        type: editFields.type,
+      })
+      setEditMode(false)
+      setEditingTx(null)
+      await load()
+    } catch (e) { setError(e.message) }
+  }
+
   // ── Transação manual ──
   const submitManualTx = async () => {
     try {
@@ -466,6 +524,71 @@ export default function App() {
     } catch (e) { setError(e.message) }
   }
 
+  // ── Recorrentes ──
+  const submitRecurring = async () => {
+    try {
+      await api.post('/api/recurring', {
+        description: newRec.desc, amount: parseFloat(newRec.amount),
+        type: newRec.type, category: newRec.cat || null, day_of_month: parseInt(newRec.day),
+      })
+      setShowAddRecurring(false)
+      setNewRec({ desc:'', amount:'', type:'OUTFLOW', cat:'', day:'1' })
+      await load()
+    } catch (e) { setError(e.message) }
+  }
+
+  const deleteRecurring = async (id) => {
+    try { await api.del(`/api/recurring/${id}`); await load() } catch (e) { setError(e.message) }
+  }
+
+  // ── Metas ──
+  const submitGoal = async () => {
+    try {
+      await api.post('/api/savings-goals', { name: newGoal.name, target_amount: parseFloat(newGoal.target), deadline: newGoal.deadline || null })
+      setShowAddGoal(false)
+      setNewGoal({ name:'', target:'', deadline:'' })
+      await load()
+    } catch (e) { setError(e.message) }
+  }
+
+  const depositGoal = async () => {
+    try {
+      const goal = showGoalDeposit
+      const newAmount = (goal.current_amount || 0) + parseFloat(depositAmount)
+      await api.patch(`/api/savings-goals/${goal.id}`, { current_amount: newAmount })
+      setShowGoalDeposit(null)
+      setDepositAmount('')
+      await load()
+    } catch (e) { setError(e.message) }
+  }
+
+  const deleteGoal = async (id) => {
+    if (!confirm('Deletar esta meta?')) return
+    try { await api.del(`/api/savings-goals/${id}`); await load() } catch (e) { setError(e.message) }
+  }
+
+  // ── Backup ──
+  const exportBackup = async () => {
+    try {
+      const blob = await api.fetchBlob('/api/backup')
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = `fincento-backup-${new Date().toISOString().slice(0,10)}.json`
+      a.click(); URL.revokeObjectURL(url)
+    } catch (e) { setError('Erro: ' + e.message) }
+  }
+
+  const importBackup = async (file) => {
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+      if (!confirm(`Restaurar backup de ${data.exported_at?.slice(0,10)}? Isso substituirá TODOS os dados atuais.`)) return
+      await api.post('/api/backup/restore', data)
+      await load()
+      setUploadMsg('Backup restaurado com sucesso!')
+    } catch (e) { setError('Erro ao restaurar: ' + e.message) }
+  }
+
   // ── Exportar CSV ──
   const exportCSV = async () => {
     try {
@@ -486,27 +609,51 @@ export default function App() {
     setAiText('')
     await new Promise(r => setTimeout(r, 1200))
 
-    const catData = byCat(txs)
+    const catData2 = byCat(txs)
     const total = txs.reduce((s, t) => s + t.amount, 0)
-    const pct = totalReceita > 0 ? ((total / totalReceita) * 100).toFixed(0) : 0
-    const top = catData[0]
+    const pct2 = totalReceita > 0 ? ((total / totalReceita) * 100).toFixed(0) : 0
+    const top = catData2[0]
     const tips = []
 
-    if (top) tips.push(`🔍 Sua maior categoria é ${top.icon} ${top.label} com ${fmt(top.value)} (${((top.value / total) * 100).toFixed(0)}% dos gastos). Revise se há itens que podem ser reduzidos.`)
-    const subs = catData.find(c => c.key === 'assinaturas')
-    if (subs) tips.push(`📱 Você tem gastos com assinaturas (${fmt(subs.value)}). Verifique se todas estão sendo usadas.`)
-    if (catData.find(c => c.key === 'alimentacao')) tips.push(`🍽️ Alimentacao pesa no orçamento. Cozinhar mais em casa pode reduzir esse gasto em até 30%.`)
+    // Relatório mensal
+    tips.push(`📊 RELATÓRIO — ${selMonthLabel.toUpperCase()}`)
+    tips.push(`Receita: ${fmt(totalReceita)} | Gastos: ${fmt(total)} | Saldo: ${fmt(totalReceita - total)}`)
 
-    // Check budgets
-    for (const c of catData) {
+    if (top) tips.push(`🔍 Sua maior categoria é ${top.icon} ${top.label} com ${fmt(top.value)} (${((top.value / total) * 100).toFixed(0)}% dos gastos). Revise se há itens que podem ser reduzidos.`)
+    const subs = catData2.find(c => c.key === 'assinaturas')
+    if (subs) tips.push(`📱 Você tem gastos com assinaturas (${fmt(subs.value)}). Verifique se todas estão sendo usadas.`)
+    if (catData2.find(c => c.key === 'alimentacao')) tips.push(`🍽️ Alimentacao pesa no orçamento. Cozinhar mais em casa pode reduzir esse gasto em até 30%.`)
+
+    // Notificações de orçamento estourado
+    const overBudget = []
+    for (const c of catData2) {
       const limit = budgets[c.key]
       if (limit && c.value > limit) {
-        tips.push(`⚠️ ${c.icon} ${c.label} estourou o orçamento: ${fmt(c.value)} de ${fmt(limit)} (${((c.value / limit) * 100).toFixed(0)}%).`)
+        overBudget.push(c)
+        tips.push(`🚨 ${c.icon} ${c.label} ESTOUROU: ${fmt(c.value)} de ${fmt(limit)} (+${((c.value / limit - 1) * 100).toFixed(0)}% acima).`)
+      } else if (limit && c.value > limit * 0.8) {
+        tips.push(`⚠️ ${c.icon} ${c.label} está em ${((c.value / limit) * 100).toFixed(0)}% do limite (${fmt(c.value)} / ${fmt(limit)}).`)
       }
     }
 
-    if (pct > 80) tips.push(`⚠️ Você está gastando ${pct}% da receita. O ideal é manter abaixo de 70%.`)
-    else if (totalReceita > 0) tips.push(`✅ Você está usando ${pct}% da receita — bom controle!`)
+    // Metas de economia
+    if (goals.length > 0) {
+      tips.push('🎯 METAS DE ECONOMIA:')
+      for (const g of goals) {
+        const gPct = g.target_amount > 0 ? ((g.current_amount / g.target_amount) * 100).toFixed(0) : 0
+        const done = g.current_amount >= g.target_amount
+        tips.push(`${done ? '🎉' : '🎯'} ${g.name}: ${fmt(g.current_amount)} / ${fmt(g.target_amount)} (${gPct}%)${done ? ' — Concluída!' : ''}`)
+      }
+    }
+
+    // Recorrentes
+    if (recurring.length > 0) {
+      const recTotal = recurring.filter(r => r.type === 'OUTFLOW').reduce((s, r) => s + Math.abs(r.amount), 0)
+      tips.push(`🔄 Você tem ${recurring.length} gasto(s) recorrente(s) totalizando ${fmt(recTotal)}/mês.`)
+    }
+
+    if (pct2 > 80) tips.push(`⚠️ Você está gastando ${pct2}% da receita. O ideal é manter abaixo de 70%.`)
+    else if (totalReceita > 0) tips.push(`✅ Você está usando ${pct2}% da receita — bom controle!`)
     tips.push(`💡 Dica: defina um limite mensal por categoria e acompanhe aqui no fin.centro.`)
 
     setAiText(tips.join('\n\n'))
@@ -518,60 +665,80 @@ export default function App() {
   const totalReceita = inflows.reduce((s, t) => s + t.amount, 0)
   const saldo        = totalReceita - totalGasto
   const catData      = byCat(txs)
+  const uniqueBanks = [...new Set([...txs, ...inflows].map(t => t.bank).filter(b => b && b !== '—'))]
   const filteredTxs  = txs
     .filter(t => filterCat === 'all' || t.cat.key === filterCat)
+    .filter(t => filterBank === 'all' || t.bank === filterBank)
     .filter(t => !searchTerm || t.desc.toLowerCase().includes(searchTerm.toLowerCase()))
     .sort((a, b) => new Date(b.date) - new Date(a.date))
   const filteredInflows = inflows
+    .filter(t => filterBank === 'all' || t.bank === filterBank)
     .filter(t => !searchTerm || t.desc.toLowerCase().includes(searchTerm.toLowerCase()))
     .sort((a, b) => new Date(b.date) - new Date(a.date))
   const pctReceita = totalReceita > 0 ? ((totalGasto / totalReceita) * 100).toFixed(0) : 0
 
+  // ── Theme toggle ──
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    setTheme(next)
+    localStorage.setItem('fc_theme', next)
+  }
+
+  const isDark = theme === 'dark'
+
   // ── STYLES ──
-  const BG = '#0D0D1A', CARD = 'rgba(255,255,255,0.04)', BORDER = 'rgba(255,255,255,0.08)', ACCENT = '#FF6B00'
+  const BG = isDark ? '#0D0D1A' : '#F5F5F8'
+  const CARD = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)'
+  const BORDER = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'
+  const ACCENT = '#FF6B00'
+  const TEXT = isDark ? '#E0E0FF' : '#1A1A2E'
+  const TEXT2 = isDark ? '#555' : '#999'
+  const TEXT3 = isDark ? '#444' : '#bbb'
+  const HEADER_BG = isDark ? 'rgba(13,13,26,0.95)' : 'rgba(245,245,248,0.95)'
+  const SHEET_BG = isDark ? '#13132A' : '#FFFFFF'
 
   const s = {
-    root:       { minHeight:'100dvh', background:BG, color:'#E0E0FF', fontFamily:"'DM Sans','Segoe UI',sans-serif", display:'flex', flexDirection:'column', maxWidth:430, margin:'0 auto', position:'relative', overflowX:'hidden' },
-    header:     { padding:'16px 20px 12px', paddingTop:'calc(env(safe-area-inset-top,0px) + 16px)', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:`1px solid ${BORDER}`, background:'rgba(13,13,26,0.95)', backdropFilter:'blur(20px)', position:'sticky', top:0, zIndex:50 },
-    logo:       { fontSize:20, fontWeight:800, color:'#fff' },
+    root:       { minHeight:'100dvh', background:BG, color:TEXT, fontFamily:"'DM Sans','Segoe UI',sans-serif", display:'flex', flexDirection:'column', maxWidth:430, margin:'0 auto', position:'relative', overflowX:'hidden' },
+    header:     { padding:'16px 20px 12px', paddingTop:'calc(env(safe-area-inset-top,0px) + 16px)', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:`1px solid ${BORDER}`, background:HEADER_BG, backdropFilter:'blur(20px)', position:'sticky', top:0, zIndex:50 },
+    logo:       { fontSize:20, fontWeight:800, color:isDark?'#fff':'#1A1A2E' },
     logoA:      { color:ACCENT },
     syncBtn:    { width:36, height:36, borderRadius:10, border:`1px solid rgba(255,107,0,0.3)`, background:'rgba(255,107,0,0.1)', color:ACCENT, fontSize:16, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' },
     scroll:     { flex:1, overflowY:'auto', padding:'0 0 90px' },
-    bottomNav:  { position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)', width:'100%', maxWidth:430, background:'rgba(13,13,26,0.97)', backdropFilter:'blur(20px)', borderTop:`1px solid ${BORDER}`, display:'flex', paddingBottom:'env(safe-area-inset-bottom,0px)', zIndex:50 },
-    navItem:    (a) => ({ flex:1, display:'flex', flexDirection:'column', alignItems:'center', padding:'10px 0 8px', color:a?ACCENT:'#555', border:'none', background:'transparent', cursor:'pointer', fontSize:9, fontWeight:700, letterSpacing:'0.5px', textTransform:'uppercase', gap:4 }),
+    bottomNav:  { position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)', width:'100%', maxWidth:430, background:isDark?'rgba(13,13,26,0.97)':'rgba(245,245,248,0.97)', backdropFilter:'blur(20px)', borderTop:`1px solid ${BORDER}`, display:'flex', paddingBottom:'env(safe-area-inset-bottom,0px)', zIndex:50 },
+    navItem:    (a) => ({ flex:1, display:'flex', flexDirection:'column', alignItems:'center', padding:'10px 0 8px', color:a?ACCENT:TEXT2, border:'none', background:'transparent', cursor:'pointer', fontSize:9, fontWeight:700, letterSpacing:'0.5px', textTransform:'uppercase', gap:4 }),
     section:    { padding:'20px 16px 0' },
     card:       { background:CARD, border:`1px solid ${BORDER}`, borderRadius:16, padding:'16px 18px', marginBottom:12 },
-    cardT:      { fontSize:11, color:'#555', textTransform:'uppercase', letterSpacing:'1px', marginBottom:10 },
+    cardT:      { fontSize:11, color:TEXT2, textTransform:'uppercase', letterSpacing:'1px', marginBottom:10 },
     kpiGrid:    { display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 },
     kpiCard:    (c) => ({ background:CARD, border:`1px solid ${c}33`, borderRadius:14, padding:'14px 16px' }),
-    kpiLbl:     { fontSize:10, color:'#555', textTransform:'uppercase', letterSpacing:'1px', marginBottom:6 },
+    kpiLbl:     { fontSize:10, color:TEXT2, textTransform:'uppercase', letterSpacing:'1px', marginBottom:6 },
     kpiVal:     (c) => ({ fontSize:22, fontWeight:800, color:c, fontVariantNumeric:'tabular-nums', lineHeight:1 }),
-    kpiSub:     { fontSize:10, color:'#444', marginTop:4 },
+    kpiSub:     { fontSize:10, color:TEXT3, marginTop:4 },
     saldoCard:  { background:`linear-gradient(135deg,rgba(255,107,0,0.12),rgba(255,107,0,0.05))`, border:`1px solid rgba(255,107,0,0.2)`, borderRadius:16, padding:'18px 20px', marginBottom:12 },
     txRow:      { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 0', borderBottom:`1px solid ${BORDER}`, cursor:'pointer' },
     txIcon:     (c) => ({ width:38, height:38, borderRadius:11, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:17, background:c+'18', marginRight:12 }),
     badge:      (c) => ({ fontSize:9, padding:'2px 7px', borderRadius:20, fontWeight:700, background:c+'22', color:c, textTransform:'uppercase', letterSpacing:'0.5px' }),
-    chip:       (a) => ({ padding:'7px 14px', borderRadius:20, fontSize:12, fontWeight:600, border:`1px solid ${a?ACCENT:BORDER}`, background:a?'rgba(255,107,0,0.12)':'transparent', color:a?ACCENT:'#666', cursor:'pointer', whiteSpace:'nowrap' }),
+    chip:       (a) => ({ padding:'7px 14px', borderRadius:20, fontSize:12, fontWeight:600, border:`1px solid ${a?ACCENT:BORDER}`, background:a?'rgba(255,107,0,0.12)':'transparent', color:a?ACCENT:TEXT2, cursor:'pointer', whiteSpace:'nowrap' }),
     aiBtn:      { width:'100%', padding:'16px', borderRadius:14, border:'none', background:`linear-gradient(135deg,${ACCENT},#FF8C42)`, color:'#fff', fontSize:15, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, boxShadow:'0 4px 20px rgba(255,107,0,0.3)', marginBottom:16 },
     overlay:    { position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', zIndex:100, display:'flex', alignItems:'flex-end', backdropFilter:'blur(6px)' },
-    sheet:      { background:'#13132A', borderRadius:'20px 20px 0 0', padding:'24px 20px', paddingBottom:'calc(env(safe-area-inset-bottom,0px) + 24px)', width:'100%', maxHeight:'80dvh', overflowY:'auto', border:`1px solid rgba(255,107,0,0.15)` },
+    sheet:      { background:SHEET_BG, borderRadius:'20px 20px 0 0', padding:'24px 20px', paddingBottom:'calc(env(safe-area-inset-bottom,0px) + 24px)', width:'100%', maxHeight:'80dvh', overflowY:'auto', border:`1px solid rgba(255,107,0,0.15)` },
     connectBtn: { width:'100%', padding:'13px', borderRadius:12, border:`1px solid rgba(78,205,196,0.3)`, background:'rgba(78,205,196,0.08)', color:'#4ECDC4', cursor:'pointer', fontSize:13, fontWeight:700, marginTop:8 },
-    input:      { width:'100%', padding:'10px 12px', borderRadius:10, border:`1px solid ${BORDER}`, background:'rgba(255,255,255,0.04)', color:'#ccc', fontSize:13, outline:'none', boxSizing:'border-box' },
+    input:      { width:'100%', padding:'10px 12px', borderRadius:10, border:`1px solid ${BORDER}`, background:isDark?'rgba(255,255,255,0.04)':'rgba(0,0,0,0.03)', color:isDark?'#ccc':'#333', fontSize:13, outline:'none', boxSizing:'border-box' },
   }
 
   const monthNav = (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:16, marginBottom:14 }}>
-      <button onClick={prevMonth} style={{ width:32, height:32, borderRadius:8, border:`1px solid ${BORDER}`, background:'transparent', color:'#888', fontSize:16, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>‹</button>
-      <div style={{ fontSize:14, fontWeight:700, color:'#ccc', textTransform:'capitalize', minWidth:160, textAlign:'center' }}>{selMonthLabel}</div>
-      <button onClick={nextMonth} disabled={isCurrentMonth} style={{ width:32, height:32, borderRadius:8, border:`1px solid ${BORDER}`, background:'transparent', color:isCurrentMonth?'#333':'#888', fontSize:16, cursor:isCurrentMonth?'default':'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>›</button>
+      <button onClick={prevMonth} style={{ width:32, height:32, borderRadius:8, border:`1px solid ${BORDER}`, background:'transparent', color:TEXT2, fontSize:16, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>‹</button>
+      <div style={{ fontSize:14, fontWeight:700, color:TEXT, textTransform:'capitalize', minWidth:160, textAlign:'center' }}>{selMonthLabel}</div>
+      <button onClick={nextMonth} disabled={isCurrentMonth} style={{ width:32, height:32, borderRadius:8, border:`1px solid ${BORDER}`, background:'transparent', color:isCurrentMonth?TEXT3:TEXT2, fontSize:16, cursor:isCurrentMonth?'default':'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>›</button>
     </div>
   )
 
   const CT = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null
     return (
-      <div style={{ background:'#1A1A2E', border:'1px solid #2A2A4A', borderRadius:8, padding:'8px 12px', fontSize:12 }}>
-        <div style={{ color:'#666', marginBottom:4 }}>{label}</div>
+      <div style={{ background:SHEET_BG, border:`1px solid ${BORDER}`, borderRadius:8, padding:'8px 12px', fontSize:12 }}>
+        <div style={{ color:TEXT2, marginBottom:4 }}>{label}</div>
         {payload.map((p,i) => <div key={i} style={{ color:p.color }}>{fmt(p.value)}</div>)}
       </div>
     )
@@ -590,11 +757,11 @@ export default function App() {
       <div style={{ ...s.root, alignItems:'center', justifyContent:'center', padding:20 }}>
         <style>{`
           @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
-          *{box-sizing:border-box;margin:0;padding:0} body{background:#0D0D1A}
+          *{box-sizing:border-box;margin:0;padding:0} body{background:${BG}}
         `}</style>
         <div style={{ textAlign:'center', width:'100%', maxWidth:280 }}>
-          <div style={{ fontSize:28, fontWeight:800, color:'#fff', marginBottom:8 }}>fin<span style={{ color:ACCENT }}>.</span>centro</div>
-          <div style={{ fontSize:13, color:'#555', marginBottom:32 }}>Digite seu PIN para acessar</div>
+          <div style={{ fontSize:28, fontWeight:800, color:TEXT, marginBottom:8 }}>fin<span style={{ color:ACCENT }}>.</span>centro</div>
+          <div style={{ fontSize:13, color:TEXT2, marginBottom:32 }}>Digite seu PIN para acessar</div>
           <input
             type="password"
             inputMode="numeric"
@@ -624,7 +791,7 @@ export default function App() {
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} .spin{animation:spin 1s linear infinite;display:inline-block}`}</style>
       <div style={{ textAlign:'center' }}>
         <div className="spin" style={{ fontSize:32, marginBottom:12 }}>⟳</div>
-        <div style={{ color:'#444', fontSize:13 }}>Carregando{isMock ? ' (demo)' : ''}...</div>
+        <div style={{ color:TEXT3, fontSize:13 }}>Carregando{isMock ? ' (demo)' : ''}...</div>
       </div>
     </div>
   )
@@ -634,7 +801,7 @@ export default function App() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@500&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-        body{background:#0D0D1A;overscroll-behavior:none}
+        body{background:${BG};overscroll-behavior:none}
         @keyframes spin{to{transform:rotate(360deg)}}
         @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
         @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
@@ -654,13 +821,14 @@ export default function App() {
         <div>
           <div style={s.logo}>fin<span style={s.logoA}>.</span>centro</div>
           {lastSync && (
-            <div style={{ fontSize:10, color:'#444', marginTop:2 }}>
+            <div style={{ fontSize:10, color:TEXT3, marginTop:2 }}>
               sync {lastSync.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}
               {!isMock && <span className="blink" style={{ marginLeft:6, color:'#4ECDC4' }}>●</span>}
             </div>
           )}
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          <button onClick={toggleTheme} style={{ ...s.syncBtn, fontSize:14, border:`1px solid ${BORDER}`, background:'transparent', color:TEXT2 }} title="Tema">{isDark ? '☀' : '🌙'}</button>
           {authToken && needsAuth !== false && (
             <button onClick={logout} style={{ ...s.syncBtn, fontSize:12, border:`1px solid rgba(255,107,107,0.3)`, background:'rgba(255,107,107,0.08)', color:'#FF6B6B' }} title="Sair">⏻</button>
           )}
@@ -685,8 +853,8 @@ export default function App() {
               {monthNav}
               <div style={s.saldoCard}>
                 <div style={{ fontSize:11, color:'rgba(255,107,0,0.7)', textTransform:'uppercase', letterSpacing:'1px', marginBottom:6 }}>Saldo do mes</div>
-                <div style={{ fontSize:34, fontWeight:800, color:saldo>=0?'#fff':'#FF6B6B', fontVariantNumeric:'tabular-nums' }}>{fmt(saldo)}</div>
-                <div style={{ fontSize:12, color:'rgba(255,255,255,0.3)', marginTop:4, textTransform:'capitalize' }}>{selMonthLabel}</div>
+                <div style={{ fontSize:34, fontWeight:800, color:saldo>=0?TEXT:'#FF6B6B', fontVariantNumeric:'tabular-nums' }}>{fmt(saldo)}</div>
+                <div style={{ fontSize:12, color:isDark?'rgba(255,255,255,0.3)':'rgba(0,0,0,0.3)', marginTop:4, textTransform:'capitalize' }}>{selMonthLabel}</div>
               </div>
               <div style={s.kpiGrid}>
                 <div style={s.kpiCard('#4ECDC4')}>
@@ -701,9 +869,9 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Histórico de gastos */}
+              {/* Histórico gastos vs receita */}
               <div style={s.card}>
-                <div style={s.cardT}>Historico de gastos</div>
+                <div style={s.cardT}>Historico mensal</div>
                 <ResponsiveContainer width="100%" height={140}>
                   <AreaChart data={flow}>
                     <defs>
@@ -711,11 +879,16 @@ export default function App() {
                         <stop offset="5%"  stopColor="#FF6B6B" stopOpacity={0.3}/>
                         <stop offset="95%" stopColor="#FF6B6B" stopOpacity={0}/>
                       </linearGradient>
+                      <linearGradient id="ar" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#4ECDC4" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#4ECDC4" stopOpacity={0}/>
+                      </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false}/>
+                    <CartesianGrid strokeDasharray="3 3" stroke={isDark?'rgba(255,255,255,0.04)':'rgba(0,0,0,0.06)'} vertical={false}/>
                     <XAxis dataKey="month" tick={{fill:'#555',fontSize:10}} axisLine={false} tickLine={false}/>
                     <YAxis hide/>
                     <Tooltip content={<CT/>}/>
+                    <Area type="monotone" dataKey="receita" name="Receita" stroke="#4ECDC4" fill="url(#ar)" strokeWidth={2} dot={false}/>
                     <Area type="monotone" dataKey="gasto" name="Gasto" stroke="#FF6B6B" fill="url(#ag)" strokeWidth={2} dot={false}/>
                   </AreaChart>
                 </ResponsiveContainer>
@@ -747,14 +920,14 @@ export default function App() {
                               <span style={{ width:8, height:8, borderRadius:'50%', background:c.color, display:'inline-block', flexShrink:0 }}/>
                               {c.icon} {c.label}
                             </div>
-                            <span style={{ fontSize:11, color:'#888', fontFamily:'DM Mono,monospace' }}>{fmt(c.value)}</span>
+                            <span style={{ fontSize:11, color:TEXT2, fontFamily:'DM Mono,monospace' }}>{fmt(c.value)}</span>
                           </div>
                           {limit != null && (
                             <>
-                              <div style={{ marginTop:3, height:3, borderRadius:2, background:'rgba(255,255,255,0.06)' }}>
+                              <div style={{ marginTop:3, height:3, borderRadius:2, background:isDark?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)' }}>
                                 <div style={{ height:'100%', borderRadius:2, width:`${pct}%`, background:over?'#FF6B6B':'#4ECDC4', transition:'width 0.3s' }} />
                               </div>
-                              <div style={{ fontSize:9, color:over?'#FF6B6B':'#555', marginTop:1 }}>
+                              <div style={{ fontSize:9, color:over?'#FF6B6B':TEXT2, marginTop:1 }}>
                                 {fmt(c.value)} / {fmt(limit)} {over ? '(estourou!)' : ''}
                               </div>
                             </>
@@ -780,7 +953,7 @@ export default function App() {
                         <div style={{ fontSize:13, fontWeight:600, marginBottom:2 }}>{t.desc}</div>
                         <div style={{ display:'flex', gap:5, alignItems:'center' }}>
                           <span style={s.badge(t.cat.color)}>{t.cat.label}</span>
-                          <span style={{ fontSize:10, color:'#444' }}>{t.date?.slice(8)}/{t.date?.slice(5,7)}</span>
+                          <span style={{ fontSize:10, color:TEXT3 }}>{t.date?.slice(8)}/{t.date?.slice(5,7)}</span>
                         </div>
                       </div>
                     </div>
@@ -788,6 +961,62 @@ export default function App() {
                   </div>
                 ))}
               </div>
+
+              {/* Transações recorrentes */}
+              {!isMock && (
+                <div style={s.card}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+                    <div style={s.cardT}>Recorrentes</div>
+                    <button onClick={() => setShowAddRecurring(true)} style={{ fontSize:12, color:ACCENT, background:'none', border:'none', cursor:'pointer', fontWeight:600 }}>+ Adicionar</button>
+                  </div>
+                  {recurring.length === 0 && <div style={{ fontSize:12, color:TEXT2, textAlign:'center', padding:'10px 0' }}>Nenhuma recorrente cadastrada</div>}
+                  {recurring.map(r => (
+                    <div key={r.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 0', borderBottom:`1px solid ${BORDER}` }}>
+                      <div>
+                        <div style={{ fontSize:13, fontWeight:600 }}>{r.description}</div>
+                        <div style={{ fontSize:10, color:TEXT2 }}>Dia {r.day_of_month} · {r.type === 'OUTFLOW' ? 'Gasto' : 'Receita'} · {cat(r.category).icon} {cat(r.category).label}</div>
+                      </div>
+                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        <span style={{ fontSize:13, fontWeight:700, color:r.type==='OUTFLOW'?'#FF6B6B':'#4ECDC4', fontFamily:'DM Mono,monospace' }}>{r.type==='OUTFLOW'?'-':'+'}{fmt(r.amount)}</span>
+                        <button onClick={() => deleteRecurring(r.id)} style={{ fontSize:11, color:'#FF6B6B', background:'none', border:'none', cursor:'pointer' }}>✕</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Metas de economia */}
+              {!isMock && (
+                <div style={s.card}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+                    <div style={s.cardT}>Metas de economia</div>
+                    <button onClick={() => setShowAddGoal(true)} style={{ fontSize:12, color:ACCENT, background:'none', border:'none', cursor:'pointer', fontWeight:600 }}>+ Nova meta</button>
+                  </div>
+                  {goals.length === 0 && <div style={{ fontSize:12, color:TEXT2, textAlign:'center', padding:'10px 0' }}>Nenhuma meta definida</div>}
+                  {goals.map(g => {
+                    const pct = g.target_amount > 0 ? Math.min((g.current_amount / g.target_amount) * 100, 100) : 0
+                    const done = g.current_amount >= g.target_amount
+                    return (
+                      <div key={g.id} style={{ padding:'10px 0', borderBottom:`1px solid ${BORDER}` }}>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+                          <div style={{ fontSize:13, fontWeight:600 }}>{done ? '🎉 ' : '🎯 '}{g.name}</div>
+                          <div style={{ display:'flex', gap:6 }}>
+                            <button onClick={() => { setShowGoalDeposit(g); setDepositAmount('') }} style={{ fontSize:10, color:'#4ECDC4', background:'none', border:'none', cursor:'pointer', fontWeight:600 }}>+ Depositar</button>
+                            <button onClick={() => deleteGoal(g.id)} style={{ fontSize:10, color:'#FF6B6B', background:'none', border:'none', cursor:'pointer' }}>✕</button>
+                          </div>
+                        </div>
+                        <div style={{ height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)', marginBottom:4 }}>
+                          <div style={{ height:'100%', borderRadius:2, width:`${pct}%`, background:done?'#4ECDC4':'#FF6B00', transition:'width 0.3s' }} />
+                        </div>
+                        <div style={{ fontSize:10, color:TEXT2 }}>
+                          {fmt(g.current_amount)} / {fmt(g.target_amount)} ({pct.toFixed(0)}%)
+                          {g.deadline && ` · até ${g.deadline.slice(8)}/${g.deadline.slice(5,7)}/${g.deadline.slice(0,4)}`}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -797,9 +1026,9 @@ export default function App() {
           <div className="slide">
             <div style={s.section}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
-                <div style={{ fontSize:18, fontWeight:800, color:'#fff' }}>Transações</div>
+                <div style={{ fontSize:18, fontWeight:800, color:isDark?'#fff':'#1A1A2E' }}>Transações</div>
                 <div style={{ display:'flex', gap:8 }}>
-                  {!isMock && <button onClick={exportCSV} style={{ padding:'6px 12px', borderRadius:8, border:`1px solid ${BORDER}`, background:'transparent', color:'#666', fontSize:11, fontWeight:600, cursor:'pointer' }}>CSV ↓</button>}
+                  {!isMock && <button onClick={exportCSV} style={{ padding:'6px 12px', borderRadius:8, border:`1px solid ${BORDER}`, background:'transparent', color:TEXT2, fontSize:11, fontWeight:600, cursor:'pointer' }}>CSV ↓</button>}
                   {!isMock && <button onClick={() => { setNewTx({ desc:'', amount:'', date:selDateFrom.slice(0,8) + String(new Date().getDate()).padStart(2,'0'), cat:'', type:'OUTFLOW' }); setShowAddTx(true) }} style={{ ...s.syncBtn, width:32, height:32, fontSize:18 }}>+</button>}
                 </div>
               </div>
@@ -821,6 +1050,16 @@ export default function App() {
                 style={{ ...s.input, marginBottom:10 }}
               />
 
+              {/* Filtro por banco */}
+              {uniqueBanks.length > 1 && (
+                <div style={{ display:'flex', gap:6, overflowX:'auto', marginBottom:10, paddingBottom:4 }}>
+                  <button style={s.chip(filterBank==='all')} onClick={()=>setFilterBank('all')}>Todos</button>
+                  {uniqueBanks.map(b => (
+                    <button key={b} style={s.chip(filterBank===b)} onClick={()=>setFilterBank(b)}>{b}</button>
+                  ))}
+                </div>
+              )}
+
               {txViewMode === 'gastos' && (
                 <>
                   <div style={{ display:'flex', gap:8, overflowX:'auto', marginBottom:14, paddingBottom:4 }}>
@@ -831,11 +1070,11 @@ export default function App() {
                       </button>
                     ))}
                   </div>
-                  <div style={{ fontSize:11, color:'#444', marginBottom:10 }}>
+                  <div style={{ fontSize:11, color:TEXT3, marginBottom:10 }}>
                     {filteredTxs.length} transações · {fmt(filteredTxs.reduce((s,t)=>s+t.amount,0))}
                   </div>
                   <div style={s.card}>
-                    {filteredTxs.length === 0 && <div style={{ color:'#444', fontSize:13, textAlign:'center', padding:'20px 0' }}>Nenhuma transação</div>}
+                    {filteredTxs.length === 0 && <div style={{ color:TEXT3, fontSize:13, textAlign:'center', padding:'20px 0' }}>Nenhuma transação</div>}
                     {filteredTxs.map(t => (
                       <div key={t.id} style={s.txRow} onClick={() => setEditingTx(t)}>
                         <div style={{ display:'flex', alignItems:'center', minWidth:0 }}>
@@ -844,7 +1083,7 @@ export default function App() {
                             <div style={{ fontSize:13, fontWeight:600, marginBottom:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:160 }}>{t.desc}</div>
                             <div style={{ display:'flex', gap:5 }}>
                               <span style={s.badge(t.cat.color)}>{t.cat.label}</span>
-                              <span style={{ fontSize:10, color:'#444' }}>{t.bank}</span>
+                              <span style={{ fontSize:10, color:TEXT3 }}>{t.bank}</span>
                             </div>
                           </div>
                         </div>
@@ -857,11 +1096,11 @@ export default function App() {
 
               {txViewMode === 'receitas' && (
                 <>
-                  <div style={{ fontSize:11, color:'#444', marginBottom:10 }}>
+                  <div style={{ fontSize:11, color:TEXT3, marginBottom:10 }}>
                     {filteredInflows.length} entrada{filteredInflows.length !== 1 ? 's' : ''} · {fmt(filteredInflows.reduce((s,t)=>s+t.amount,0))}
                   </div>
                   <div style={s.card}>
-                    {filteredInflows.length === 0 && <div style={{ color:'#444', fontSize:13, textAlign:'center', padding:'20px 0' }}>Nenhuma receita</div>}
+                    {filteredInflows.length === 0 && <div style={{ color:TEXT3, fontSize:13, textAlign:'center', padding:'20px 0' }}>Nenhuma receita</div>}
                     {filteredInflows.map(t => (
                       <div key={t.id} style={s.txRow} onClick={() => setEditingTx(t)}>
                         <div style={{ display:'flex', alignItems:'center', minWidth:0 }}>
@@ -870,7 +1109,7 @@ export default function App() {
                             <div style={{ fontSize:13, fontWeight:600, marginBottom:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:160 }}>{t.desc}</div>
                             <div style={{ display:'flex', gap:5 }}>
                               <span style={s.badge('#4ECDC4')}>receita</span>
-                              <span style={{ fontSize:10, color:'#444' }}>{t.bank}</span>
+                              <span style={{ fontSize:10, color:TEXT3 }}>{t.bank}</span>
                             </div>
                           </div>
                         </div>
@@ -888,8 +1127,8 @@ export default function App() {
         {tab === 'ia' && (
           <div className="slide">
             <div style={s.section}>
-              <div style={{ fontSize:18, fontWeight:800, color:'#fff', marginBottom:4 }}>IA Financeira</div>
-              <div style={{ fontSize:12, color:'#555', marginBottom:20 }}>Analise dos seus {txs.length} gastos deste mês</div>
+              <div style={{ fontSize:18, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:4 }}>IA Financeira</div>
+              <div style={{ fontSize:12, color:TEXT2, marginBottom:20 }}>Analise dos seus {txs.length} gastos deste mês</div>
               <button style={s.aiBtn} onClick={askAI}>✦ Analisar com IA</button>
               <div style={s.card}>
                 <div style={s.cardT}>Resumo</div>
@@ -900,8 +1139,8 @@ export default function App() {
                   { label:'% da receita gasta', value: totalReceita > 0 ? `${pctReceita}%` : '—' },
                 ].map(r => (
                   <div key={r.label} style={{ display:'flex', justifyContent:'space-between', padding:'10px 0', borderBottom:`1px solid ${BORDER}` }}>
-                    <span style={{ fontSize:13, color:'#666' }}>{r.label}</span>
-                    <span style={{ fontSize:13, fontWeight:700, color:'#ccc' }}>{r.value}</span>
+                    <span style={{ fontSize:13, color:TEXT2 }}>{r.label}</span>
+                    <span style={{ fontSize:13, fontWeight:700, color:TEXT }}>{r.value}</span>
                   </div>
                 ))}
               </div>
@@ -913,8 +1152,8 @@ export default function App() {
         {tab === 'contas' && (
           <div className="slide">
             <div style={s.section}>
-              <div style={{ fontSize:18, fontWeight:800, color:'#fff', marginBottom:4 }}>Contas</div>
-              <div style={{ fontSize:12, color:'#555', marginBottom:16 }}>
+              <div style={{ fontSize:18, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:4 }}>Contas</div>
+              <div style={{ fontSize:12, color:TEXT2, marginBottom:16 }}>
                 {isMock ? 'Modo demo — backend offline' : `${links.length} links via Belvo`}
               </div>
               {links.map((l, i) => (
@@ -922,7 +1161,7 @@ export default function App() {
                   <div style={{ fontSize:26 }}>🏦</div>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:14, fontWeight:700 }}>{l.institution?.name || l.id}</div>
-                    <div style={{ fontSize:11, color:'#555', marginTop:2 }}>{l.status==='valid'?'Conectado':'Inativo'}</div>
+                    <div style={{ fontSize:11, color:TEXT2, marginTop:2 }}>{l.status==='valid'?'Conectado':'Inativo'}</div>
                   </div>
                   <span style={s.badge(l.status==='valid'?'#4ECDC4':'#888')}>{l.status==='valid'?'● ativo':'○ off'}</span>
                 </div>
@@ -936,7 +1175,7 @@ export default function App() {
               {/* Importar extrato */}
               <div style={{ ...s.card, marginTop:12 }}>
                 <div style={s.cardT}>Importar extrato</div>
-                <div style={{ fontSize:12, color:'#555', marginBottom:12 }}>
+                <div style={{ fontSize:12, color:TEXT2, marginBottom:12 }}>
                   Envie um arquivo .ofx, .qfx ou .csv do seu banco
                 </div>
                 <input
@@ -972,7 +1211,7 @@ export default function App() {
                     <div key={b.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 0', borderBottom:`1px solid ${BORDER}` }}>
                       <div>
                         <div style={{ fontSize:13, fontWeight:600 }}>{b.bank}</div>
-                        <div style={{ fontSize:10, color:'#555' }}>{b.count} transações · {new Date(b.importedAt).toLocaleDateString('pt-BR')}</div>
+                        <div style={{ fontSize:10, color:TEXT2 }}>{b.count} transações · {new Date(b.importedAt).toLocaleDateString('pt-BR')}</div>
                       </div>
                       <button
                         onClick={() => deleteBatch(b.id)}
@@ -985,9 +1224,24 @@ export default function App() {
                 </div>
               )}
 
+              {/* Backup */}
+              {!isMock && (
+                <div style={{ ...s.card, marginTop:8 }}>
+                  <div style={s.cardT}>Backup completo</div>
+                  <div style={{ fontSize:12, color:TEXT2, marginBottom:12 }}>Exporte ou restaure todos os dados (transações, orçamentos, metas, regras).</div>
+                  <div style={{ display:'flex', gap:8 }}>
+                    <button onClick={exportBackup} style={{ flex:1, padding:'10px', borderRadius:10, border:`1px solid rgba(78,205,196,0.3)`, background:'rgba(78,205,196,0.08)', color:'#4ECDC4', cursor:'pointer', fontSize:12, fontWeight:600 }}>Exportar JSON</button>
+                    <label style={{ flex:1, padding:'10px', borderRadius:10, border:`1px solid rgba(255,107,0,0.3)`, background:'rgba(255,107,0,0.08)', color:ACCENT, cursor:'pointer', fontSize:12, fontWeight:600, textAlign:'center' }}>
+                      Restaurar
+                      <input type="file" accept=".json" style={{ display:'none' }} onChange={e => { if (e.target.files[0]) importBackup(e.target.files[0]); e.target.value = '' }} />
+                    </label>
+                  </div>
+                </div>
+              )}
+
               <div style={{ ...s.card, borderColor:'rgba(255,107,0,0.12)', marginTop:8 }}>
                 <div style={{ fontSize:12, fontWeight:700, color:ACCENT, marginBottom:8 }}>🔒 Segurança ativa</div>
-                <div style={{ fontSize:12, color:'#555', lineHeight:1.7 }}>
+                <div style={{ fontSize:12, color:TEXT2, lineHeight:1.7 }}>
                   Credenciais ficam no servidor Node.js — nunca chegam ao browser.
                   Dados persistidos no Turso (SQLite na nuvem).
                 </div>
@@ -1011,19 +1265,19 @@ export default function App() {
       {aiOpen && (
         <div style={s.overlay} onClick={()=>!aiLoading&&setAiOpen(false)}>
           <div style={s.sheet} onClick={e=>e.stopPropagation()}>
-            <div style={{ width:36, height:4, borderRadius:2, background:'rgba(255,255,255,0.1)', margin:'0 auto 20px' }}/>
+            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
             <div style={{ fontSize:15, fontWeight:800, color:ACCENT, marginBottom:14 }}>✦ Analise da IA</div>
             {aiLoading ? (
               <div style={{ textAlign:'center', padding:'30px 0' }}>
                 <div className="spin" style={{ fontSize:28, marginBottom:12 }}>⟳</div>
-                <div style={{ color:'#444', fontSize:13 }}>Analisando {txs.length} transações...</div>
+                <div style={{ color:TEXT3, fontSize:13 }}>Analisando {txs.length} transações...</div>
               </div>
             ) : (
               <>
-                <div style={{ fontSize:14, color:'#bbb', lineHeight:1.8, whiteSpace:'pre-wrap', background:'rgba(255,255,255,0.03)', borderRadius:12, padding:14, border:`1px solid ${BORDER}`, marginBottom:14, maxHeight:300, overflowY:'auto' }}>
+                <div style={{ fontSize:14, color:TEXT, lineHeight:1.8, whiteSpace:'pre-wrap', background:isDark?'rgba(255,255,255,0.03)':'rgba(0,0,0,0.03)', borderRadius:12, padding:14, border:`1px solid ${BORDER}`, marginBottom:14, maxHeight:300, overflowY:'auto' }}>
                   {aiText}
                 </div>
-                <button onClick={()=>setAiOpen(false)} style={{ width:'100%', padding:'13px', borderRadius:12, border:`1px solid ${BORDER}`, background:'transparent', color:'#666', cursor:'pointer', fontSize:13, fontWeight:600 }}>
+                <button onClick={()=>setAiOpen(false)} style={{ width:'100%', padding:'13px', borderRadius:12, border:`1px solid ${BORDER}`, background:'transparent', color:TEXT2, cursor:'pointer', fontSize:13, fontWeight:600 }}>
                   Fechar
                 </button>
               </>
@@ -1032,34 +1286,60 @@ export default function App() {
         </div>
       )}
 
-      {/* Edit Category Bottom Sheet */}
+      {/* Edit Transaction Bottom Sheet */}
       {editingTx && (
-        <div style={s.overlay} onClick={() => setEditingTx(null)}>
+        <div style={s.overlay} onClick={() => { setEditingTx(null); setEditMode(false) }}>
           <div style={s.sheet} onClick={e => e.stopPropagation()}>
-            <div style={{ width:36, height:4, borderRadius:2, background:'rgba(255,255,255,0.1)', margin:'0 auto 20px' }}/>
-            <div style={{ fontSize:15, fontWeight:800, color:'#fff', marginBottom:4 }}>{editingTx.desc}</div>
-            <div style={{ fontSize:13, color:'#666', marginBottom:16 }}>{fmt(editingTx.amount)} · {editingTx.date}</div>
-            <div style={{ fontSize:12, color:'#555', marginBottom:12, textTransform:'uppercase', letterSpacing:'1px' }}>Alterar categoria</div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-              {UNIQUE_CATS.map(([belvoKey, info]) => (
-                <button
-                  key={belvoKey}
-                  onClick={() => saveCategoryEdit(editingTx.id, belvoKey)}
-                  style={{
-                    padding:'12px 10px', borderRadius:12,
-                    border: `1px solid ${editingTx.cat.key === info.key ? info.color : BORDER}`,
-                    background: editingTx.cat.key === info.key ? info.color + '22' : 'transparent',
-                    color: editingTx.cat.key === info.key ? info.color : '#888',
-                    cursor:'pointer', fontSize:13, fontWeight:600, display:'flex', alignItems:'center', gap:6,
-                  }}
-                >
-                  {info.icon} {info.label}
+            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
+
+            {editMode ? (
+              <>
+                <div style={{ fontSize:15, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:16 }}>Editar transação</div>
+                <input placeholder="Descrição" value={editFields.desc} onChange={e => setEditFields(p => ({...p, desc:e.target.value}))} style={{ ...s.input, marginBottom:8 }} />
+                <input placeholder="Valor" inputMode="decimal" value={editFields.amount} onChange={e => setEditFields(p => ({...p, amount:e.target.value}))} style={{ ...s.input, marginBottom:8 }} />
+                <input type="date" value={editFields.date} onChange={e => setEditFields(p => ({...p, date:e.target.value}))} style={{ ...s.input, marginBottom:8, colorScheme:isDark?'dark':'light' }} />
+                <div style={{ display:'flex', gap:8, marginBottom:16 }}>
+                  <button style={s.chip(editFields.type==='OUTFLOW')} onClick={() => setEditFields(p => ({...p, type:'OUTFLOW'}))}>Gasto</button>
+                  <button style={s.chip(editFields.type==='INFLOW')} onClick={() => setEditFields(p => ({...p, type:'INFLOW'}))}>Receita</button>
+                </div>
+                <button onClick={saveEditTx} disabled={!editFields.desc || !editFields.amount} style={{ ...s.aiBtn, opacity:(!editFields.desc||!editFields.amount)?0.5:1 }}>Salvar</button>
+                <button onClick={() => setEditMode(false)} style={{ width:'100%', padding:'13px', borderRadius:12, border:`1px solid ${BORDER}`, background:'transparent', color:TEXT2, cursor:'pointer', fontSize:13, fontWeight:600, marginTop:8 }}>Cancelar</button>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize:15, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:4 }}>{editingTx.desc}</div>
+                <div style={{ fontSize:13, color:TEXT2, marginBottom:16 }}>{fmt(editingTx.amount)} · {editingTx.date} · {editingTx.bank}</div>
+
+                {!isMock && (
+                  <div style={{ display:'flex', gap:8, marginBottom:16 }}>
+                    <button onClick={() => startEditTx(editingTx)} style={{ flex:1, padding:'10px', borderRadius:10, border:`1px solid rgba(78,205,196,0.3)`, background:'rgba(78,205,196,0.08)', color:'#4ECDC4', cursor:'pointer', fontSize:13, fontWeight:600 }}>Editar</button>
+                    <button onClick={() => deleteTransaction(editingTx.id)} style={{ flex:1, padding:'10px', borderRadius:10, border:`1px solid rgba(255,107,107,0.3)`, background:'rgba(255,107,107,0.08)', color:'#FF6B6B', cursor:'pointer', fontSize:13, fontWeight:600 }}>Deletar</button>
+                  </div>
+                )}
+
+                <div style={{ fontSize:12, color:TEXT2, marginBottom:12, textTransform:'uppercase', letterSpacing:'1px' }}>Alterar categoria</div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                  {UNIQUE_CATS.map(([belvoKey, info]) => (
+                    <button
+                      key={belvoKey}
+                      onClick={() => saveCategoryEdit(editingTx.id, belvoKey)}
+                      style={{
+                        padding:'12px 10px', borderRadius:12,
+                        border: `1px solid ${editingTx.cat.key === info.key ? info.color : BORDER}`,
+                        background: editingTx.cat.key === info.key ? info.color + '22' : 'transparent',
+                        color: editingTx.cat.key === info.key ? info.color : '#888',
+                        cursor:'pointer', fontSize:13, fontWeight:600, display:'flex', alignItems:'center', gap:6,
+                      }}
+                    >
+                      {info.icon} {info.label}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => setEditingTx(null)} style={{ width:'100%', padding:'13px', borderRadius:12, border:`1px solid ${BORDER}`, background:'transparent', color:TEXT2, cursor:'pointer', fontSize:13, fontWeight:600, marginTop:12 }}>
+                  Fechar
                 </button>
-              ))}
-            </div>
-            <button onClick={() => setEditingTx(null)} style={{ width:'100%', padding:'13px', borderRadius:12, border:`1px solid ${BORDER}`, background:'transparent', color:'#666', cursor:'pointer', fontSize:13, fontWeight:600, marginTop:12 }}>
-              Fechar
-            </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1068,8 +1348,8 @@ export default function App() {
       {showAddTx && (
         <div style={s.overlay} onClick={() => setShowAddTx(false)}>
           <div style={s.sheet} onClick={e => e.stopPropagation()}>
-            <div style={{ width:36, height:4, borderRadius:2, background:'rgba(255,255,255,0.1)', margin:'0 auto 20px' }}/>
-            <div style={{ fontSize:15, fontWeight:800, color:'#fff', marginBottom:16 }}>Nova transação</div>
+            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
+            <div style={{ fontSize:15, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:16 }}>Nova transação</div>
 
             <div style={{ display:'flex', gap:8, marginBottom:12 }}>
               <button style={s.chip(newTx.type==='OUTFLOW')} onClick={() => setNewTx(p => ({...p, type:'OUTFLOW'}))}>Gasto</button>
@@ -1078,12 +1358,12 @@ export default function App() {
 
             <input placeholder="Descrição" value={newTx.desc} onChange={e => setNewTx(p => ({...p, desc:e.target.value}))} style={{ ...s.input, marginBottom:8 }} />
             <input placeholder="Valor" inputMode="decimal" value={newTx.amount} onChange={e => setNewTx(p => ({...p, amount:e.target.value}))} style={{ ...s.input, marginBottom:8 }} />
-            <input type="date" value={newTx.date} onChange={e => setNewTx(p => ({...p, date:e.target.value}))} style={{ ...s.input, marginBottom:12, colorScheme:'dark' }} />
+            <input type="date" value={newTx.date} onChange={e => setNewTx(p => ({...p, date:e.target.value}))} style={{ ...s.input, marginBottom:12, colorScheme:isDark?'dark':'light' }} />
 
-            <div style={{ fontSize:11, color:'#555', marginBottom:8, textTransform:'uppercase', letterSpacing:'1px' }}>Categoria</div>
+            <div style={{ fontSize:11, color:TEXT2, marginBottom:8, textTransform:'uppercase', letterSpacing:'1px' }}>Categoria</div>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginBottom:16 }}>
               {UNIQUE_CATS.map(([belvoKey, info]) => (
-                <button key={belvoKey} onClick={() => setNewTx(p => ({...p, cat:belvoKey}))} style={{ padding:'10px 8px', borderRadius:10, border:`1px solid ${newTx.cat===belvoKey?info.color:BORDER}`, background:newTx.cat===belvoKey?info.color+'22':'transparent', color:newTx.cat===belvoKey?info.color:'#888', cursor:'pointer', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:4 }}>
+                <button key={belvoKey} onClick={() => setNewTx(p => ({...p, cat:belvoKey}))} style={{ padding:'10px 8px', borderRadius:10, border:`1px solid ${newTx.cat===belvoKey?info.color:BORDER}`, background:newTx.cat===belvoKey?info.color+'22':'transparent', color:newTx.cat===belvoKey?info.color:TEXT2, cursor:'pointer', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:4 }}>
                   {info.icon} {info.label}
                 </button>
               ))}
@@ -1100,18 +1380,90 @@ export default function App() {
         </div>
       )}
 
+      {/* Add Recurring Bottom Sheet */}
+      {showAddRecurring && (
+        <div style={s.overlay} onClick={() => setShowAddRecurring(false)}>
+          <div style={s.sheet} onClick={e => e.stopPropagation()}>
+            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
+            <div style={{ fontSize:15, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:16 }}>Nova recorrente</div>
+            <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+              <button style={s.chip(newRec.type==='OUTFLOW')} onClick={() => setNewRec(p => ({...p, type:'OUTFLOW'}))}>Gasto</button>
+              <button style={s.chip(newRec.type==='INFLOW')} onClick={() => setNewRec(p => ({...p, type:'INFLOW'}))}>Receita</button>
+            </div>
+            <input placeholder="Descrição" value={newRec.desc} onChange={e => setNewRec(p => ({...p, desc:e.target.value}))} style={{ ...s.input, marginBottom:8 }} />
+            <input placeholder="Valor" inputMode="decimal" value={newRec.amount} onChange={e => setNewRec(p => ({...p, amount:e.target.value}))} style={{ ...s.input, marginBottom:8 }} />
+            <input placeholder="Dia do mês (1-31)" inputMode="numeric" value={newRec.day} onChange={e => setNewRec(p => ({...p, day:e.target.value}))} style={{ ...s.input, marginBottom:12 }} />
+            <div style={{ fontSize:11, color:TEXT2, marginBottom:8, textTransform:'uppercase', letterSpacing:'1px' }}>Categoria</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginBottom:16 }}>
+              {UNIQUE_CATS.map(([belvoKey, info]) => (
+                <button key={belvoKey} onClick={() => setNewRec(p => ({...p, cat:belvoKey}))} style={{ padding:'10px 8px', borderRadius:10, border:`1px solid ${newRec.cat===belvoKey?info.color:BORDER}`, background:newRec.cat===belvoKey?info.color+'22':'transparent', color:newRec.cat===belvoKey?info.color:TEXT2, cursor:'pointer', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:4 }}>
+                  {info.icon} {info.label}
+                </button>
+              ))}
+            </div>
+            <button onClick={submitRecurring} disabled={!newRec.desc || !newRec.amount} style={{ ...s.aiBtn, opacity:(!newRec.desc||!newRec.amount)?0.5:1 }}>Salvar</button>
+          </div>
+        </div>
+      )}
+
+      {/* Add Goal Bottom Sheet */}
+      {showAddGoal && (
+        <div style={s.overlay} onClick={() => setShowAddGoal(false)}>
+          <div style={s.sheet} onClick={e => e.stopPropagation()}>
+            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
+            <div style={{ fontSize:15, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:16 }}>Nova meta de economia</div>
+            <input placeholder="Nome da meta (ex: Viagem)" value={newGoal.name} onChange={e => setNewGoal(p => ({...p, name:e.target.value}))} style={{ ...s.input, marginBottom:8 }} />
+            <input placeholder="Valor alvo (R$)" inputMode="decimal" value={newGoal.target} onChange={e => setNewGoal(p => ({...p, target:e.target.value}))} style={{ ...s.input, marginBottom:8 }} />
+            <input type="date" value={newGoal.deadline} onChange={e => setNewGoal(p => ({...p, deadline:e.target.value}))} style={{ ...s.input, marginBottom:16, colorScheme:isDark?'dark':'light' }} placeholder="Prazo (opcional)" />
+            <button onClick={submitGoal} disabled={!newGoal.name || !newGoal.target} style={{ ...s.aiBtn, opacity:(!newGoal.name||!newGoal.target)?0.5:1 }}>Criar meta</button>
+          </div>
+        </div>
+      )}
+
+      {/* Goal Deposit Bottom Sheet */}
+      {showGoalDeposit && (
+        <div style={s.overlay} onClick={() => setShowGoalDeposit(null)}>
+          <div style={s.sheet} onClick={e => e.stopPropagation()}>
+            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
+            <div style={{ fontSize:15, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:4 }}>Depositar em: {showGoalDeposit.name}</div>
+            <div style={{ fontSize:12, color:TEXT2, marginBottom:16 }}>Atual: {fmt(showGoalDeposit.current_amount)} / {fmt(showGoalDeposit.target_amount)}</div>
+            <input placeholder="Valor a depositar" inputMode="decimal" value={depositAmount} onChange={e => setDepositAmount(e.target.value)} style={{ ...s.input, marginBottom:16 }} />
+            <button onClick={depositGoal} disabled={!depositAmount} style={{ ...s.aiBtn, opacity:!depositAmount?0.5:1 }}>Depositar</button>
+          </div>
+        </div>
+      )}
+
+      {/* Onboarding */}
+      {showOnboarding && (
+        <div style={s.overlay} onClick={() => {}}>
+          <div style={{ ...s.sheet, textAlign:'center' }}>
+            <div style={{ fontSize:36, marginBottom:16 }}>🎉</div>
+            <div style={{ fontSize:22, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:8 }}>Bem-vindo ao fin<span style={{ color:ACCENT }}>.</span>centro</div>
+            <div style={{ fontSize:14, color:TEXT2, lineHeight:1.8, marginBottom:20 }}>
+              Seu app de finanças pessoais. Importe extratos OFX/CSV, acompanhe gastos por categoria, defina orçamentos e metas de economia.
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:20, textAlign:'left' }}>
+              {['📄 Importe extratos do seu banco', '📊 Veja gastos por categoria', '🎯 Defina metas de economia', '💰 Acompanhe receitas e gastos', '📱 Funciona offline (PWA)'].map(t => (
+                <div key={t} style={{ fontSize:13, color:isDark?'#ccc':'#444', padding:'8px 12px', background:CARD, borderRadius:8 }}>{t}</div>
+              ))}
+            </div>
+            <button onClick={() => { setShowOnboarding(false); localStorage.setItem('fc_onboarded', '1') }} style={s.aiBtn}>Começar</button>
+          </div>
+        </div>
+      )}
+
       {/* Budget Editor Bottom Sheet */}
       {showBudgetEditor && (
         <div style={s.overlay} onClick={() => setShowBudgetEditor(false)}>
           <div style={s.sheet} onClick={e => e.stopPropagation()}>
-            <div style={{ width:36, height:4, borderRadius:2, background:'rgba(255,255,255,0.1)', margin:'0 auto 20px' }}/>
-            <div style={{ fontSize:15, fontWeight:800, color:'#fff', marginBottom:4 }}>Limites por categoria</div>
-            <div style={{ fontSize:12, color:'#555', marginBottom:16 }}>Defina o limite mensal para cada categoria. Deixe vazio para remover.</div>
+            <div style={{ width:36, height:4, borderRadius:2, background:isDark?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)', margin:'0 auto 20px' }}/>
+            <div style={{ fontSize:15, fontWeight:800, color:isDark?'#fff':'#1A1A2E', marginBottom:4 }}>Limites por categoria</div>
+            <div style={{ fontSize:12, color:TEXT2, marginBottom:16 }}>Defina o limite mensal para cada categoria. Deixe vazio para remover.</div>
 
             {UNIQUE_CATS.map(([, info]) => (
               <div key={info.key} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
                 <div style={{ fontSize:14, width:30, textAlign:'center' }}>{info.icon}</div>
-                <div style={{ flex:1, fontSize:13, color:'#ccc' }}>{info.label}</div>
+                <div style={{ flex:1, fontSize:13, color:TEXT }}>{info.label}</div>
                 <input
                   type="number"
                   inputMode="decimal"

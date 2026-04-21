@@ -383,6 +383,124 @@ app.post('/api/transactions/manual', async (req, res) => {
   }
 })
 
+// ── Deletar transação individual ─────────────────────────────────────────
+
+app.delete('/api/transactions/:txId', async (req, res) => {
+  try {
+    await Storage.deleteTransaction(req.params.txId)
+    clearCache('transactions')
+    ok(res, { deleted: true })
+  } catch (e) {
+    err(res, e.message, 404)
+  }
+})
+
+// ── Editar transação ─────────────────────────────────────────────────────
+
+app.patch('/api/transactions/:txId', async (req, res) => {
+  try {
+    const { description, amount, value_date, type } = req.body
+    await Storage.updateTransaction(req.params.txId, { description, amount, value_date, type })
+    clearCache('transactions')
+    ok(res, { updated: true })
+  } catch (e) {
+    err(res, e.message, 400)
+  }
+})
+
+// ── Transações recorrentes ──────────────────────────────────────────────
+
+app.get('/api/recurring', async (_, res) => {
+  try { ok(res, await Storage.getRecurringTransactions()) } catch (e) { err(res, e.message) }
+})
+
+app.post('/api/recurring', async (req, res) => {
+  try {
+    const { description, amount, type, category, day_of_month } = req.body
+    if (!description || amount == null || !type || !day_of_month) {
+      return err(res, 'Campos obrigatórios: description, amount, type, day_of_month.', 400)
+    }
+    const id = `rec_${crypto.randomUUID()}`
+    await Storage.addRecurringTransaction({ id, description, amount: parseFloat(amount), type, category, day_of_month: parseInt(day_of_month) })
+    ok(res, { id })
+  } catch (e) { err(res, e.message, 400) }
+})
+
+app.delete('/api/recurring/:id', async (req, res) => {
+  try {
+    await Storage.deleteRecurringTransaction(req.params.id)
+    ok(res, { deleted: true })
+  } catch (e) { err(res, e.message, 404) }
+})
+
+// ── Metas de economia ───────────────────────────────────────────────────
+
+app.get('/api/savings-goals', async (_, res) => {
+  try { ok(res, await Storage.getSavingsGoals()) } catch (e) { err(res, e.message) }
+})
+
+app.post('/api/savings-goals', async (req, res) => {
+  try {
+    const { name, target_amount, deadline } = req.body
+    if (!name || !target_amount) return err(res, 'Campos obrigatórios: name, target_amount.', 400)
+    const id = `goal_${crypto.randomUUID()}`
+    await Storage.addSavingsGoal({ id, name, target_amount: parseFloat(target_amount), deadline })
+    ok(res, { id })
+  } catch (e) { err(res, e.message, 400) }
+})
+
+app.patch('/api/savings-goals/:id', async (req, res) => {
+  try {
+    const { current_amount } = req.body
+    if (current_amount == null) return err(res, 'current_amount obrigatório.', 400)
+    await Storage.updateSavingsGoal(req.params.id, parseFloat(current_amount))
+    ok(res, { updated: true })
+  } catch (e) { err(res, e.message, 400) }
+})
+
+app.delete('/api/savings-goals/:id', async (req, res) => {
+  try {
+    await Storage.deleteSavingsGoal(req.params.id)
+    ok(res, { deleted: true })
+  } catch (e) { err(res, e.message, 404) }
+})
+
+// ── Settings ────────────────────────────────────────────────────────────
+
+app.get('/api/settings/:key', async (req, res) => {
+  try {
+    const value = await Storage.getSetting(req.params.key)
+    ok(res, { key: req.params.key, value })
+  } catch (e) { err(res, e.message) }
+})
+
+app.put('/api/settings/:key', async (req, res) => {
+  try {
+    const { value } = req.body
+    await Storage.setSetting(req.params.key, value)
+    ok(res, { saved: true })
+  } catch (e) { err(res, e.message) }
+})
+
+// ── Backup ──────────────────────────────────────────────────────────────
+
+app.get('/api/backup', async (_, res) => {
+  try {
+    const data = await Storage.getFullBackup()
+    res.setHeader('Content-Type', 'application/json; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="fincento-backup-${new Date().toISOString().slice(0,10)}.json"`)
+    res.send(JSON.stringify(data, null, 2))
+  } catch (e) { err(res, e.message) }
+})
+
+app.post('/api/backup/restore', express.json({ limit: '50mb' }), async (req, res) => {
+  try {
+    await Storage.restoreBackup(req.body)
+    clearCache('transactions')
+    ok(res, { restored: true })
+  } catch (e) { err(res, e.message, 400) }
+})
+
 // ── Estatísticas mensais ─────────────────────────────────────────────────────
 
 const MONTH_LABELS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']

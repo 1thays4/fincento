@@ -58,6 +58,23 @@ export async function initStorage() {
       description TEXT PRIMARY KEY,
       category TEXT NOT NULL
     )`,
+    `CREATE TABLE IF NOT EXISTS recurring_transactions (
+      id TEXT PRIMARY KEY,
+      description TEXT NOT NULL,
+      amount REAL NOT NULL,
+      type TEXT NOT NULL CHECK (type IN ('OUTFLOW', 'INFLOW')),
+      category TEXT,
+      day_of_month INTEGER NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1
+    )`,
+    `CREATE TABLE IF NOT EXISTS savings_goals (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      target_amount REAL NOT NULL,
+      current_amount REAL NOT NULL DEFAULT 0,
+      deadline TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
   ])
 
   // Carrega regras aprendidas para o parser
@@ -232,6 +249,141 @@ export async function getMonthlyAggregates(dateFrom, dateTo) {
     args: [dateFrom, dateTo],
   })
   return rows
+}
+
+// ── Deletar transação individual ────────────────────────────────────────────
+export async function deleteTransaction(txId) {
+  const { rowsAffected } = await db.execute({ sql: 'DELETE FROM transactions WHERE id = ?', args: [txId] })
+  if (rowsAffected === 0) throw new Error('Transação não encontrada.')
+}
+
+// ── Editar transação ────────────────────────────────────────────────────────
+export async function updateTransaction(txId, fields) {
+  const sets = []
+  const args = []
+  if (fields.description !== undefined) { sets.push('description = ?'); args.push(fields.description) }
+  if (fields.amount !== undefined)      { sets.push('amount = ?');      args.push(fields.amount) }
+  if (fields.value_date !== undefined)  { sets.push('value_date = ?');  args.push(fields.value_date) }
+  if (fields.type !== undefined)        { sets.push('type = ?');        args.push(fields.type) }
+  if (sets.length === 0) throw new Error('Nenhum campo para atualizar.')
+  args.push(txId)
+  const { rowsAffected } = await db.execute({ sql: `UPDATE transactions SET ${sets.join(', ')} WHERE id = ?`, args })
+  if (rowsAffected === 0) throw new Error('Transação não encontrada.')
+}
+
+// ── Transações recorrentes ─────────────────────────────────────────────────
+export async function getRecurringTransactions() {
+  const { rows } = await db.execute('SELECT id, description, amount, type, category, day_of_month, active FROM recurring_transactions ORDER BY description')
+  return rows
+}
+
+export async function addRecurringTransaction({ id, description, amount, type, category, day_of_month }) {
+  await db.execute({
+    sql: 'INSERT INTO recurring_transactions (id, description, amount, type, category, day_of_month, active) VALUES (?, ?, ?, ?, ?, ?, 1)',
+    args: [id, description, amount, type, category || null, day_of_month],
+  })
+}
+
+export async function deleteRecurringTransaction(id) {
+  await db.execute({ sql: 'DELETE FROM recurring_transactions WHERE id = ?', args: [id] })
+}
+
+// ── Metas de economia ──────────────────────────────────────────────────────
+export async function getSavingsGoals() {
+  const { rows } = await db.execute('SELECT id, name, target_amount, current_amount, deadline, created_at FROM savings_goals ORDER BY created_at DESC')
+  return rows
+}
+
+export async function addSavingsGoal({ id, name, target_amount, deadline }) {
+  await db.execute({
+    sql: 'INSERT INTO savings_goals (id, name, target_amount, current_amount, deadline) VALUES (?, ?, ?, 0, ?)',
+    args: [id, name, target_amount, deadline || null],
+  })
+}
+
+export async function updateSavingsGoal(id, current_amount) {
+  const { rowsAffected } = await db.execute({ sql: 'UPDATE savings_goals SET current_amount = ? WHERE id = ?', args: [current_amount, id] })
+  if (rowsAffected === 0) throw new Error('Meta não encontrada.')
+}
+
+export async function deleteSavingsGoal(id) {
+  await db.execute({ sql: 'DELETE FROM savings_goals WHERE id = ?', args: [id] })
+}
+
+// ── Settings ───────────────────────────────────────────────────────────────
+export async function getSetting(key) {
+  const { rows } = await db.execute({ sql: 'SELECT value FROM settings WHERE key = ?', args: [key] })
+  return rows.length > 0 ? rows[0].value : null
+}
+
+export async function setSetting(key, value) {
+  await db.execute({
+    sql: 'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
+    args: [key, value],
+  })
+}
+
+// ── Backup ─────────────────────────────────────────────────────────────────
+export async function getFullBackup() {
+  const [batches, transactions, budgets, rules, recurring, goals, settings] = await Promise.all([
+    db.execute('SELECT * FROM batches'),
+    db.execute('SELECT * FROM transactions'),
+    db.execute('SELECT * FROM budgets'),
+    db.execute('SELECT * FROM category_rules'),
+    db.execute('SELECT * FROM recurring_transactions').catch(() => ({ rows: [] })),
+    db.execute('SELECT * FROM savings_goals').catch(() => ({ rows: [] })),
+    db.execute('SELECT * FROM settings'),
+  ])
+  return {
+    version: 1,
+    exported_at: new Date().toISOString(),
+    batches: batches.rows,
+    transactions: transactions.rows,
+    budgets: budgets.rows,
+    category_rules: rules.rows,
+    recurring_transactions: recurring.rows,
+    savings_goals: goals.rows,
+    settings: settings.rows,
+  }
+}
+
+export async function restoreBackup(data) {
+  if (data.version !== 1) throw new Error('Versão de backup não suportada.')
+  // Limpa todas as tabelas
+  await db.batch([
+    'DELETE FROM transactions',
+    'DELETE FROM batches',
+    'DELETE FROM budgets',
+    'DELETE FROM category_rules',
+    'DELETE FROM recurring_transactions',
+    'DELETE FROM savings_goals',
+    'DELETE FROM settings',
+  ])
+  // Restaura dados
+  const stmts = []
+  for (const b of (data.batches || [])) {
+    stmts.push({ sql: 'INSERT INTO batches (id, bank, original_filename, imported_at, count) VALUES (?, ?, ?, ?, ?)', args: [b.id, b.bank, b.original_filename, b.imported_at, b.count] })
+  }
+  for (const t of (data.transactions || [])) {
+    stmts.push({ sql: 'INSERT INTO transactions (id, batch_id, description, amount, value_date, type, category, category_override, link_id, institution, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', args: [t.id, t.batch_id, t.description, t.amount, t.value_date, t.type, t.category, t.category_override, t.link_id, t.institution, t.created_at] })
+  }
+  for (const b of (data.budgets || [])) {
+    stmts.push({ sql: 'INSERT INTO budgets (category_key, limit_amount) VALUES (?, ?)', args: [b.category_key, b.limit_amount] })
+  }
+  for (const r of (data.category_rules || [])) {
+    stmts.push({ sql: 'INSERT INTO category_rules (description, category) VALUES (?, ?)', args: [r.description, r.category] })
+  }
+  for (const r of (data.recurring_transactions || [])) {
+    stmts.push({ sql: 'INSERT INTO recurring_transactions (id, description, amount, type, category, day_of_month, active) VALUES (?, ?, ?, ?, ?, ?, ?)', args: [r.id, r.description, r.amount, r.type, r.category, r.day_of_month, r.active] })
+  }
+  for (const g of (data.savings_goals || [])) {
+    stmts.push({ sql: 'INSERT INTO savings_goals (id, name, target_amount, current_amount, deadline, created_at) VALUES (?, ?, ?, ?, ?, ?)', args: [g.id, g.name, g.target_amount, g.current_amount, g.deadline, g.created_at] })
+  }
+  for (const s of (data.settings || [])) {
+    stmts.push({ sql: 'INSERT INTO settings (key, value) VALUES (?, ?)', args: [s.key, s.value] })
+  }
+  if (stmts.length > 0) await db.batch(stmts)
+  await loadLearnedRules()
 }
 
 // ── Exportação ──────────────────────────────────────────────────────────────
