@@ -5,6 +5,7 @@ import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import multer from 'multer'
+import crypto from 'crypto'
 import * as Belvo from './belvo.js'
 import * as Parser from './parser.js'
 import * as Storage from './storage.js'
@@ -26,8 +27,8 @@ app.use(helmet())
 // CORS: só aceita requisições do frontend configurado
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-  methods: ['GET', 'POST', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type'],
+  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }))
 
 app.use(express.json())
@@ -56,21 +57,81 @@ const upload = multer({
   },
 })
 
-// Rate limiting mais restrito para o widget token (evita abuso)
+// Rate limiting mais restrito para auth (evita brute force)
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: { ok: false, error: 'Muitas tentativas. Aguarde 1 minuto.' },
+})
+
+// Rate limiting para o widget token
 const widgetLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
   message: { error: 'Limite de geração de tokens atingido.' },
 })
 
+// ── Autenticação PIN ─────────────────────────────────────────────────────────
+const AUTH_PIN_HASH = process.env.AUTH_PIN_HASH || null
+const AUTH_SECRET   = process.env.AUTH_SECRET   || 'dev-secret-change-me'
+
+function generateToken() {
+  const ts = Date.now().toString()
+  const hmac = crypto.createHmac('sha256', AUTH_SECRET).update(ts).digest('hex')
+  return `${ts}.${hmac}`
+}
+
+function validateToken(token) {
+  if (!token) return false
+  const [ts, hmac] = token.split('.')
+  if (!ts || !hmac) return false
+  const expected = crypto.createHmac('sha256', AUTH_SECRET).update(ts).digest('hex')
+  if (hmac !== expected) return false
+  // Token válido por 7 dias
+  const age = Date.now() - parseInt(ts)
+  return age < 7 * 24 * 60 * 60 * 1000
+}
+
+function authMiddleware(req, res, next) {
+  // Se PIN não configurado, pula auth (dev mode)
+  if (!AUTH_PIN_HASH) return next()
+
+  const authHeader = req.headers.authorization
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+
+  if (!validateToken(token)) {
+    return res.status(401).json({ ok: false, error: 'Token inválido ou expirado.' })
+  }
+  next()
+}
+
+// Aplica auth em todas as rotas /api/* exceto /api/auth
+app.post('/api/auth', authLimiter, (req, res) => {
+  if (!AUTH_PIN_HASH) {
+    // Sem PIN configurado — retorna token direto (dev mode)
+    return res.json({ ok: true, data: { token: generateToken() } })
+  }
+
+  const { pin } = req.body || {}
+  if (!pin) return res.status(400).json({ ok: false, error: 'PIN obrigatório.' })
+
+  const hash = crypto.createHash('sha256').update(pin.toString()).digest('hex')
+  if (hash !== AUTH_PIN_HASH) {
+    return res.status(401).json({ ok: false, error: 'PIN incorreto.' })
+  }
+
+  res.json({ ok: true, data: { token: generateToken() } })
+})
+
+// Protege todas as rotas /api/* (exceto /api/auth que já foi registrado acima)
+app.use('/api/', authMiddleware)
+
 // ── Cache em memória simples ──────────────────────────────────────────────────
-// Evita bater na API Belvo a cada carregamento de tela.
-// Em produção com múltiplos usuários, use Redis.
 const cache = new Map()
 const TTL = {
-  links:        5  * 60 * 1000, //  5 min
-  accounts:     5  * 60 * 1000, //  5 min
-  transactions: 5  * 60 * 1000, //  5 min
+  links:        5  * 60 * 1000,
+  accounts:     5  * 60 * 1000,
+  transactions: 5  * 60 * 1000,
 }
 
 function getCache(key) {
@@ -99,7 +160,7 @@ const err = (res, msg, code = 500) => {
 
 // ── ROTAS ─────────────────────────────────────────────────────────────────────
 
-// Health check
+// Health check (sem auth)
 app.get('/health', (_, res) => {
   res.json({
     status: 'ok',
@@ -110,7 +171,6 @@ app.get('/health', (_, res) => {
 
 // ── Links ─────────────────────────────────────────────────────────────────────
 
-// GET /api/links — lista todos os links (bancos conectados)
 app.get('/api/links', async (_, res) => {
   if (!BELVO_CONFIGURED) return ok(res, [])
   try {
@@ -125,7 +185,6 @@ app.get('/api/links', async (_, res) => {
   }
 })
 
-// POST /api/links/refresh/:linkId — força resync de um link
 app.post('/api/links/refresh/:linkId', async (req, res) => {
   const { linkId } = req.params
   try {
@@ -141,7 +200,6 @@ app.post('/api/links/refresh/:linkId', async (req, res) => {
 
 // ── Contas ────────────────────────────────────────────────────────────────────
 
-// GET /api/accounts/:linkId — lista contas de um link
 app.get('/api/accounts/:linkId', async (req, res) => {
   const { linkId } = req.params
   const cacheKey = `accounts:${linkId}`
@@ -159,7 +217,6 @@ app.get('/api/accounts/:linkId', async (req, res) => {
 
 // ── Transações ────────────────────────────────────────────────────────────────
 
-// GET /api/transactions/:linkId?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
 app.get('/api/transactions/:linkId', async (req, res) => {
   const { linkId } = req.params
   const { date_from, date_to } = req.query
@@ -168,7 +225,6 @@ app.get('/api/transactions/:linkId', async (req, res) => {
     return err(res, 'Parâmetros date_from e date_to são obrigatórios.', 400)
   }
 
-  // Validação básica de formato de data
   const dateRe = /^\d{4}-\d{2}-\d{2}$/
   if (!dateRe.test(date_from) || !dateRe.test(date_to)) {
     return err(res, 'Formato de data inválido. Use YYYY-MM-DD.', 400)
@@ -187,8 +243,7 @@ app.get('/api/transactions/:linkId', async (req, res) => {
   }
 })
 
-// GET /api/transactions/all?date_from=...&date_to=...
-// Busca transações de TODOS os links de uma vez (útil para o dashboard)
+// GET /api/transactions?date_from=...&date_to=...
 app.get('/api/transactions', async (req, res) => {
   const { date_from, date_to } = req.query
 
@@ -201,7 +256,6 @@ app.get('/api/transactions', async (req, res) => {
     const cached = getCache(cacheKey)
     if (cached) return ok(res, cached)
 
-    // Tenta buscar do Belvo (pode falhar se não configurado)
     let belvoTxs = []
     try {
       const links = await Belvo.getLinks()
@@ -218,10 +272,10 @@ app.get('/api/transactions', async (req, res) => {
       belvoTxs = results
         .filter(r => r.status === 'fulfilled')
         .flatMap(r => r.value)
-    } catch { /* Belvo indisponível, continua só com importados */ }
+    } catch { /* Belvo indisponível */ }
 
-    // Merge com transações importadas via OFX/CSV (sem filtro de data — volume pequeno)
-    const imported = Storage.loadAllImported()
+    const imported = (await Storage.loadAllImported())
+      .filter(t => t.value_date >= date_from && t.value_date <= date_to)
 
     const allTxs = [...belvoTxs, ...imported]
     setCache(cacheKey, allTxs, TTL.transactions)
@@ -233,11 +287,8 @@ app.get('/api/transactions', async (req, res) => {
 
 // ── Widget Token ──────────────────────────────────────────────────────────────
 
-// POST /api/widget-token
-// O frontend pede um token temporário para abrir o Belvo Connect Widget.
-// O token expira em minutos — seguro para enviar ao browser.
 app.post('/api/widget-token', widgetLimiter, async (req, res) => {
-  const { linkId } = req.body // opcional: para reconectar um link existente
+  const { linkId } = req.body
   try {
     const token = await Belvo.createWidgetToken(linkId || null)
     ok(res, { access: token.access })
@@ -248,7 +299,6 @@ app.post('/api/widget-token', widgetLimiter, async (req, res) => {
 
 // ── Import OFX/CSV ───────────────────────────────────────────────────────────
 
-// POST /api/import/upload — Upload e parse de arquivo OFX/CSV
 app.post('/api/import/upload', (req, res, next) => {
   upload.single('file')(req, res, (uploadErr) => {
     if (uploadErr) return err(res, uploadErr.message, 400)
@@ -260,13 +310,9 @@ app.post('/api/import/upload', (req, res, next) => {
 
     const bank = req.body.bank || 'Importado'
     const transactions = await Parser.parseFile(req.file.buffer, req.file.originalname)
-
-    // Seta instituição em cada transação
     transactions.forEach(t => { if (!t._institution) t._institution = bank })
 
-    const batch = Storage.saveBatch(transactions, { bank, originalFilename: req.file.originalname })
-
-    // Limpa cache de transações para incluir os importados
+    const batch = await Storage.saveBatch(transactions, { bank, originalFilename: req.file.originalname })
     clearCache('transactions')
 
     ok(res, { ...batch, transactions })
@@ -275,11 +321,10 @@ app.post('/api/import/upload', (req, res, next) => {
   }
 })
 
-// GET /api/import/transactions — Lista todas as transações importadas
-app.get('/api/import/transactions', (req, res) => {
+app.get('/api/import/transactions', async (req, res) => {
   try {
     const { date_from, date_to } = req.query
-    let txs = Storage.loadAllImported()
+    let txs = await Storage.loadAllImported()
     if (date_from && date_to) {
       txs = txs.filter(t => t.value_date >= date_from && t.value_date <= date_to)
     }
@@ -289,19 +334,17 @@ app.get('/api/import/transactions', (req, res) => {
   }
 })
 
-// GET /api/import/batches — Lista batches importados
-app.get('/api/import/batches', (_, res) => {
+app.get('/api/import/batches', async (_, res) => {
   try {
-    ok(res, Storage.listBatches())
+    ok(res, await Storage.listBatches())
   } catch (e) {
     err(res, e.message)
   }
 })
 
-// DELETE /api/import/batches/:batchId — Deleta um batch
-app.delete('/api/import/batches/:batchId', (req, res) => {
+app.delete('/api/import/batches/:batchId', async (req, res) => {
   try {
-    Storage.deleteBatch(req.params.batchId)
+    await Storage.deleteBatch(req.params.batchId)
     clearCache('transactions')
     ok(res, { deleted: true })
   } catch (e) {
@@ -309,18 +352,146 @@ app.delete('/api/import/batches/:batchId', (req, res) => {
   }
 })
 
+// ── Editar categoria ─────────────────────────────────────────────────────────
+
+app.patch('/api/transactions/:txId/category', async (req, res) => {
+  try {
+    const { category } = req.body
+    await Storage.updateTransactionCategory(req.params.txId, category || null)
+    clearCache('transactions')
+    ok(res, { updated: true })
+  } catch (e) {
+    err(res, e.message, 400)
+  }
+})
+
+// ── Transação manual ─────────────────────────────────────────────────────────
+
+app.post('/api/transactions/manual', async (req, res) => {
+  try {
+    const { description, amount, value_date, type, category } = req.body
+    if (!description || amount == null || !value_date || !type) {
+      return err(res, 'Campos obrigatórios: description, amount, value_date, type.', 400)
+    }
+
+    const id = `manual_${crypto.randomUUID()}`
+    await Storage.addManualTransaction({ id, description, amount: parseFloat(amount), value_date, type, category })
+    clearCache('transactions')
+    ok(res, { id, description, amount, value_date, type, category })
+  } catch (e) {
+    err(res, e.message, 400)
+  }
+})
+
+// ── Estatísticas mensais ─────────────────────────────────────────────────────
+
+const MONTH_LABELS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+
+app.get('/api/stats/monthly-flow', async (req, res) => {
+  try {
+    const months = parseInt(req.query.months) || 6
+    const now = new Date()
+    const from = new Date(now.getFullYear(), now.getMonth() - months + 1, 1)
+    const dateFrom = `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, '0')}-01`
+    const dateTo = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()).padStart(2, '0')}`
+
+    const rows = await Storage.getMonthlyAggregates(dateFrom, dateTo)
+
+    // Garante todos os meses presentes (mesmo sem transações)
+    const result = []
+    for (let i = 0; i < months; i++) {
+      const d = new Date(from.getFullYear(), from.getMonth() + i, 1)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const row = rows.find(r => r.month === key)
+      result.push({
+        month: MONTH_LABELS[d.getMonth()],
+        gasto: row?.gasto || 0,
+        receita: row?.receita || 0,
+      })
+    }
+
+    ok(res, result)
+  } catch (e) {
+    err(res, e.message)
+  }
+})
+
+// ── Orçamento ────────────────────────────────────────────────────────────────
+
+app.get('/api/budgets', async (_, res) => {
+  try {
+    ok(res, await Storage.getBudgets())
+  } catch (e) {
+    err(res, e.message)
+  }
+})
+
+app.put('/api/budgets/:categoryKey', async (req, res) => {
+  try {
+    const { limit } = req.body
+    if (!limit || limit <= 0) return err(res, 'Limite deve ser maior que zero.', 400)
+    await Storage.saveBudget(req.params.categoryKey, parseFloat(limit))
+    ok(res, { saved: true })
+  } catch (e) {
+    err(res, e.message)
+  }
+})
+
+app.delete('/api/budgets/:categoryKey', async (req, res) => {
+  try {
+    await Storage.deleteBudget(req.params.categoryKey)
+    ok(res, { deleted: true })
+  } catch (e) {
+    err(res, e.message)
+  }
+})
+
+// ── Exportar CSV ─────────────────────────────────────────────────────────────
+
+app.get('/api/export/csv', async (req, res) => {
+  try {
+    const { date_from, date_to } = req.query
+    const txs = await Storage.getTransactionsForExport(date_from, date_to)
+
+    const header = 'Data;Descrição;Valor;Tipo;Categoria;Banco'
+    const rows = txs.map(t => {
+      const valor = t.amount.toFixed(2).replace('.', ',')
+      const tipo = t.type === 'OUTFLOW' ? 'Gasto' : 'Receita'
+      const cat = t.category || 'Outros'
+      const banco = t.institution || 'Manual'
+      return `${t.value_date};${t.description};${valor};${tipo};${cat};${banco}`
+    })
+
+    const csv = '\uFEFF' + [header, ...rows].join('\n')
+    const filename = `fincento-export-${date_from || 'all'}.csv`
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+    res.send(csv)
+  } catch (e) {
+    err(res, e.message)
+  }
+})
+
 // ── 404 catch-all ─────────────────────────────────────────────────────────────
 app.use((_, res) => res.status(404).json({ ok: false, error: 'Rota não encontrada.' }))
 
-// ── Start ─────────────────────────────────────────────────────────────────────
-Storage.initStorage()
-
-app.listen(PORT, () => {
-  console.log(`
+// ── Start (async para aguardar Turso) ────────────────────────────────────────
+async function start() {
+  await Storage.initStorage()
+  app.listen(PORT, () => {
+    console.log(`
 ╔════════════════════════════════════╗
 ║  fin.centro backend                ║
 ║  http://localhost:${PORT}             ║
 ║  Belvo env: ${(process.env.BELVO_ENV || 'sandbox').padEnd(21)}║
+║  Auth: ${AUTH_PIN_HASH ? 'PIN ativo' : 'desabilitado'}              ║
 ╚════════════════════════════════════╝
-  `)
+    `)
+  })
+}
+
+start().catch(e => {
+  console.error('❌ Falha ao iniciar:', e.message)
+  process.exit(1)
 })
