@@ -99,6 +99,17 @@ async function migrateFromFilesystem() {
 
 // ── Batches ──────────────────────────────────────────────────────────────────
 export async function saveBatch(transactions, metadata = {}) {
+  // Deduplica: ignora transações que já existem (mesma descrição + valor + data)
+  const { rows: existing } = await db.execute(
+    `SELECT description, amount, value_date FROM transactions WHERE link_id IN ('import', 'manual')`
+  )
+  const existingSet = new Set(existing.map(r => `${r.description}|${r.amount}|${r.value_date}`))
+  const unique = transactions.filter(t => !existingSet.has(`${t.description}|${t.amount}|${t.value_date}`))
+
+  if (unique.length === 0) {
+    return { id: null, count: 0, bank: metadata.bank || 'Importado', importedAt: new Date().toISOString(), skipped: transactions.length }
+  }
+
   const batchId = randomUUID()
   const bank = metadata.bank || 'Importado'
   const importedAt = new Date().toISOString()
@@ -106,16 +117,17 @@ export async function saveBatch(transactions, metadata = {}) {
   const stmts = [
     {
       sql: 'INSERT INTO batches (id, bank, original_filename, imported_at, count) VALUES (?, ?, ?, ?, ?)',
-      args: [batchId, bank, metadata.originalFilename || null, importedAt, transactions.length],
+      args: [batchId, bank, metadata.originalFilename || null, importedAt, unique.length],
     },
-    ...transactions.map(t => ({
+    ...unique.map(t => ({
       sql: 'INSERT INTO transactions (id, batch_id, description, amount, value_date, type, category, link_id, institution) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       args: [t.id, batchId, t.description, t.amount, t.value_date, t.type, t.category || null, t._linkId || 'import', t._institution || null],
     })),
   ]
 
   await db.batch(stmts)
-  return { id: batchId, count: transactions.length, bank, importedAt }
+  const skipped = transactions.length - unique.length
+  return { id: batchId, count: unique.length, bank, importedAt, skipped }
 }
 
 export async function listBatches() {

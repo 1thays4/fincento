@@ -394,7 +394,10 @@ export default function App() {
     setUploadMsg(null)
     try {
       const result = await api.upload('/api/import/upload', file, { bank: uploadBank || 'Importado' })
-      setUploadMsg(`${result.count} transações importadas!`)
+      const msg = result.count > 0
+        ? `${result.count} transações importadas!${result.skipped ? ` (${result.skipped} duplicadas ignoradas)` : ''}`
+        : `Nenhuma transação nova — ${result.skipped || 0} já existiam.`
+      setUploadMsg(msg)
       setUploadBank('')
       await loadBatches()
       await load()
