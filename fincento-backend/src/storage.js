@@ -8,10 +8,17 @@ let db
 
 // ── Inicialização ────────────────────────────────────────────────────────────
 export async function initStorage() {
-  db = createClient({
-    url:       process.env.TURSO_DATABASE_URL,
-    authToken: process.env.TURSO_AUTH_TOKEN,
-  })
+  const tursoUrl = process.env.TURSO_DATABASE_URL
+  if (tursoUrl && !tursoUrl.includes('seu-banco')) {
+    db = createClient({ url: tursoUrl, authToken: process.env.TURSO_AUTH_TOKEN })
+    console.log('💾 Turso conectado.')
+  } else {
+    const localPath = join(process.cwd(), 'data', 'local.db')
+    const { mkdirSync } = await import('fs')
+    mkdirSync(join(process.cwd(), 'data'), { recursive: true })
+    db = createClient({ url: `file:${localPath}` })
+    console.log(`💾 SQLite local: ${localPath}`)
+  }
 
   await db.batch([
     `CREATE TABLE IF NOT EXISTS batches (
